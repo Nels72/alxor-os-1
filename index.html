@@ -1,0 +1,125 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALXOR OS - Votre Collaborateur Virtuel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
+    <style>
+        *, body {
+            font-family: 'Open Sans', sans-serif !important;
+            background-color: #f8fafc; /* Professional light gray-blue */
+            color: #1e293b;
+            margin: 0;
+            overflow-x: hidden;
+        }
+        h1, h2, h3, h4 {
+            font-family: 'Open Sans', sans-serif !important;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4F7CFF;
+            border-radius: 4px;
+        }
+        /* Conformité : barres de scroll affinées, même épaisseur (6px) */
+        .scrollbar-conformite-v::-webkit-scrollbar {
+            width: 6px;
+        }
+        .scrollbar-conformite-v::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 3px;
+        }
+        .scrollbar-conformite-v::-webkit-scrollbar-thumb {
+            background: #4F7CFF;
+            border-radius: 3px;
+        }
+        .scrollbar-conformite-h::-webkit-scrollbar {
+            height: 6px;
+        }
+        .scrollbar-conformite-h::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 3px;
+        }
+        .scrollbar-conformite-h::-webkit-scrollbar-thumb {
+            background: #4F7CFF;
+            border-radius: 3px;
+        }
+        /* Suppression barre bleue parasite dans carte Alertes DDA Critiques */
+        .kpi-card-alertes::-webkit-scrollbar,
+        .kpi-card-alertes *::-webkit-scrollbar {
+            display: none;
+        }
+        .kpi-card-alertes {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Suppression barre verticale bleue parasite (scrollbar) à droite du nom – page Clients */
+        .dashboard-clients-table::-webkit-scrollbar,
+        .dashboard-clients-table *::-webkit-scrollbar {
+            display: none;
+        }
+        .dashboard-clients-table {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Suppression trait bleu (scrollbar) à droite du champ recherche */
+        .dashboard-search-input::-webkit-scrollbar {
+            display: none;
+        }
+        .dashboard-search-input {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .text-gradient {
+            background: linear-gradient(90deg, #4F7CFF 0%, #2ED3B7 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .bg-gradient-primary {
+            background: linear-gradient(135deg, #4F7CFF 0%, #2ED3B7 100%);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+        /* Recherche : pulse highlight 2s (ambre doux → origine) */
+        @keyframes pulse-highlight {
+            0%, 100% { background-color: transparent; }
+            25%, 75% { background-color: rgba(254, 243, 199, 0.9); }
+            50% { background-color: rgb(254, 243, 199); }
+        }
+        .animate-pulse-highlight {
+            animation: pulse-highlight 2s ease-in-out;
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "framer-motion": "https://esm.sh/framer-motion@^12.33.0",
+    "recharts": "https://esm.sh/recharts@^3.7.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.40.0",
+    "zustand": "https://esm.sh/zustand@^5.0.11"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+    <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>

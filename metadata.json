@@ -1,0 +1,7 @@
+{
+  "name": "Copy of ALXOR OS",
+  "description": "A high-performance SaaS production and task management platform for insurance brokers, featuring automated workflows and real-time KPI tracking.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
