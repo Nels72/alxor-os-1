@@ -1,4 +1,4 @@
-
+// Mise à jour du routage - Version 1.0
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
