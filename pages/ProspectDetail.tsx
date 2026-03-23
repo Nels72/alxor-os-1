@@ -365,7 +365,7 @@ const ProspectDetail: React.FC = () => {
                       }`}
                     >
                       {prospect.ia_analysis_done ? (
-                        <><CheckCircle size={22} /> Matching Terminé</>
+                        <><CheckCircle size={22} /> Matching Terminé !</>
                       ) : (
                         <><Brain size={22} /> Calculer le Matching</>
                       )}

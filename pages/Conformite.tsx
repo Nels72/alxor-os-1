@@ -316,7 +316,7 @@ Cabinet ALXOR OS - Conformité DDA & ACPR`;
             </div>
             <div className="p-4 max-h-[280px] overflow-y-auto">
               {provisoiresList.length === 0 ? (
-                <p className="text-slate-500 text-sm font-medium py-4">Aucun document provisoire en cours.</p>
+                <p className="text-slate-500 text-sm font-medium py-4">Aucun document provisoire en cours</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
