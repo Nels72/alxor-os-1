@@ -7,7 +7,7 @@ import ProspectForm from './Pages/ProspectForm';
 import ProspectDetail from './Pages/ProspectDetail';
 import ClientPortal from './Pages/ClientPortal';
 import Conformite from './Pages/Conformite';
-import { useStore } from './store';
+import { useStore } from './Store';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isAuthenticated = useStore((state) => state.isAuthenticated);
