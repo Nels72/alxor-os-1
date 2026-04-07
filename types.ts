@@ -136,6 +136,13 @@ export interface Prospect {
   documents_provisoires?: Record<string, { date_echeance: string }>;
   /** RI 36 mois : période incomplète → GES plafonné à 90% */
   periode_incomplete_ri?: boolean;
+  /** Pièces jointes lues depuis Airtable (clé = type workflow ex. permis_conduire) */
+  airtable_attachments?: Record<
+    string,
+    { url: string; filename?: string }[]
+  >;
+  /** Champs bruts du record Dossiers (courtier, statuts, etc.) */
+  airtable_dossier_fields?: Record<string, unknown>;
 }
 
 export interface Document {

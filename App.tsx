@@ -1,13 +1,13 @@
 // Mise à jour du routage - Version 1.0
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import LandingPage from './pages/LandingPage';
-import Dashboard from './pages/Dashboard';
-import ProspectForm from './pages/ProspectForm';
-import ProspectDetail from './pages/ProspectDetail';
-import ClientPortal from './pages/ClientPortal';
-import Conformite from './pages/Conformite';
-import Login from './pages/Login';
+import LandingPage from './Pages/LandingPage';
+import Dashboard from './Pages/Dashboard';
+import ProspectForm from './Pages/ProspectForm';
+import ProspectDetail from './Pages/ProspectDetail';
+import ClientPortal from './Pages/ClientPortal';
+import Conformite from './Pages/Conformite';
+import Login from './Pages/Login';
 import { useStore } from './store';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {

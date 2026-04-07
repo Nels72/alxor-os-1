@@ -43,6 +43,10 @@ import {
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useStore } from '../store';
 import { PriorityLevel, Client, Contrat, Amendment } from '../types';
+import {
+  listDossierRecords,
+  mapDossierToProspect,
+} from '../services/dossiersAirtable';
 
 function isContractResigned(con: Contrat): boolean {
   return con.statut === 'resilie';
@@ -181,8 +185,11 @@ const Dashboard: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') || 'overview';
   const [clientSearchQuery, setClientSearchQuery] = useState('');
-  
+
   const prospects = useStore(state => state.prospects);
+  const mergeProspectsFromAirtable = useStore(
+    (state) => state.mergeProspectsFromAirtable
+  );
   const clients = useStore(state => state.clients);
   const contracts = useStore(state => state.contracts);
   const generateFicheConseil = useStore(state => state.generateFicheConseil);
@@ -191,6 +198,20 @@ const Dashboard: React.FC = () => {
   const clientNotes = useStore(state => state.clientNotes);
   const setClientNotes = useStore(state => state.setClientNotes);
   const updateContrat = useStore(state => state.updateContrat);
+
+  useEffect(() => {
+    if (tab !== 'prospects') return;
+    let cancelled = false;
+    (async () => {
+      const rows = await listDossierRecords();
+      if (cancelled || rows.length === 0) return;
+      const mapped = await Promise.all(rows.map((r) => mapDossierToProspect(r)));
+      if (!cancelled) mergeProspectsFromAirtable(mapped);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, mergeProspectsFromAirtable]);
 
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
   const [searchHighlight, setSearchHighlight] = useState<{ clientId: string; contractId?: string; avenantIndex?: number; phase: 'avenant' | 'contract' } | null>(null);
@@ -338,7 +359,7 @@ const Dashboard: React.FC = () => {
   const renderProspectsList = () => (
     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
       <div className="p-6 md:p-8 border-b border-slate-200 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-        <h3 className="text-xl font-black text-slate-900 tracking-tight">Flux de Production (Supabase Table: solicitations)</h3>
+        <h3 className="text-xl font-black text-slate-900 tracking-tight">Flux de Production</h3>
         <div className="flex gap-2 md:gap-4 w-full md:w-auto">
           <div className="relative flex-1 md:min-w-[250px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -374,7 +395,7 @@ const Dashboard: React.FC = () => {
                 <td className="px-8 py-5" onClick={() => navigate(`/prospects/${p.id}`)}>
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-black text-slate-400 shrink-0 text-xs relative">
-                       {p.nom[0]}{p.prenom[0]}
+                       {(p.nom?.[0] || '?').toUpperCase()}{(p.prenom?.[0] || '?').toUpperCase()}
                        {p.priority === 'Critique' && <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></div>}
                     </div>
                     <div>
@@ -850,7 +871,7 @@ const Dashboard: React.FC = () => {
             <div>
               <h1 className="text-2xl md:text-4xl font-black mb-2 text-slate-900 tracking-tighter">
                 {tab === 'overview' && "Pilotage Stratégique"}
-                {tab === 'prospects' && "Flux Production"}
+                {tab === 'prospects' && "Projets en cours"}
                 {tab === 'docs' && "Archives GED"}
                 {tab === 'settings' && "Paramètres"}
               </h1>

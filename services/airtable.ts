@@ -1,14 +1,18 @@
 // src/services/airtable.ts
 // Configuration et fonctions pour se connecter à Airtable
 
-const AIRTABLE_API_KEY = process.env.REACT_APP_AIRTABLE_API_KEY || '';
+const AIRTABLE_BEARER =
+  process.env.REACT_APP_AIRTABLE_TOKEN ||
+  process.env.REACT_APP_AIRTABLE_PAT ||
+  process.env.REACT_APP_AIRTABLE_API_KEY ||
+  '';
 const AIRTABLE_BASE_ID = process.env.REACT_APP_AIRTABLE_BASE_ID || '';
 
 const AIRTABLE_API_URL = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}`;
 
 // Headers pour toutes les requêtes
 const headers = {
-  'Authorization': `Bearer ${AIRTABLE_API_KEY}`,
+  'Authorization': `Bearer ${AIRTABLE_BEARER}`,
   'Content-Type': 'application/json',
 };
 
@@ -40,6 +44,14 @@ export interface AirtableProspect {
   };
 }
 
+export interface AirtableDossier {
+  id: string;
+  fields: {
+    Email?: string;
+    [key: string]: unknown;
+  };
+}
+
 // Récupérer tous les prospects
 export async function getProspects(): Promise<AirtableProspect[]> {
   try {
@@ -55,6 +67,24 @@ export async function getProspects(): Promise<AirtableProspect[]> {
     return data.records;
   } catch (error) {
     console.error('Erreur lors de la récupération des prospects:', error);
+    throw error;
+  }
+}
+
+export async function getDossiers(): Promise<AirtableDossier[]> {
+  try {
+    const response = await fetch(`${AIRTABLE_API_URL}/Dossiers`, {
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erreur Airtable: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.records;
+  } catch (error) {
+    console.error('Erreur lors de la récupération des dossiers:', error);
     throw error;
   }
 }

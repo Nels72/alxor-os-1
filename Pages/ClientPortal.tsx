@@ -1,5 +1,4 @@
-
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -23,44 +22,138 @@ import {
 import { useStore } from '../store';
 import { Contrat } from '../types';
 import Logo from '../components/Logo';
+import {
+  readClientSession,
+  clearClientSession,
+  initialsFromName,
+  type ClientUserSession,
+} from '../lib/clientSession';
+import {
+  fetchDossierById,
+  collectMissingDocumentLabels,
+  isRibMissing,
+  getInsuranceTypeLabel,
+  getBrokerDisplayName,
+  uploadRIBToAirtable,
+} from '../services/dossiersAirtable';
 
 const ClientPortal: React.FC = () => {
   const navigate = useNavigate();
-  const clients = useStore(state => state.clients);
-  const contracts = useStore(state => state.contracts);
   const logout = useStore(state => state.logout);
-  const client = clients[0]; // Simulation pour la démo (Pierre Dubois)
+
+  const [session, setSession] = useState<ClientUserSession | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
+
+  useEffect(() => {
+    const s = readClientSession();
+    setSession(s);
+    setSessionReady(true);
+    if (!s) {
+      navigate('/login', { replace: true });
+    }
+  }, [navigate]);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedContract, setSelectedContract] = useState<Contrat | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [demoToast, setDemoToast] = useState(false);
+  const [dossierFields, setDossierFields] = useState<Record<string, unknown>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!session?.dossier?.fields || typeof session.dossier.fields !== 'object') return;
+    setDossierFields(session.dossier.fields as Record<string, unknown>);
+  }, [session?.dossier?.fields]);
+
+  useEffect(() => {
+    if (!session?.dossierId) return;
+    let cancelled = false;
+    (async () => {
+      const { record } = await fetchDossierById(session.dossierId);
+      if (cancelled || !record?.fields) return;
+      setDossierFields(record.fields as Record<string, unknown>);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.dossierId]);
+
   const handleLogout = () => {
+    clearClientSession();
     logout();
-    navigate('/');
+    navigate('/login');
   };
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setIsUploading(true);
-      // Simulation d'upload
-      setTimeout(() => {
-        setIsUploading(false);
-        setUploadSuccess(true);
-        setTimeout(() => setUploadSuccess(false), 3000);
-      }, 1500);
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !session) return;
+    setIsUploading(true);
+    setUploadSuccess(false);
+    setDemoToast(false);
+    try {
+      const result = await uploadRIBToAirtable(session.dossierId, file);
+      if (!result.ok) {
+        window.alert(result.error || "Envoi impossible.");
+        return;
+      }
+      setUploadSuccess(true);
+      if (result.demo) {
+        setDemoToast(true);
+        setTimeout(() => setDemoToast(false), 5000);
+      }
+      const { record } = await fetchDossierById(session.dossierId);
+      if (record?.fields) {
+        setDossierFields(record.fields as Record<string, unknown>);
+      }
+    } finally {
+      setIsUploading(false);
+      setTimeout(() => setUploadSuccess(false), 4000);
     }
+    e.target.value = "";
   };
 
   const handleContactBroker = () => {
-    window.location.href = "mailto:jean.marc@dupont-assur.fr?subject=Demande client ALXOR Portal";
+    const raw =
+      dossierFields["Email courtier"] ??
+      dossierFields["Email Courtier"] ??
+      dossierFields["Courtier Email"];
+    const to =
+      typeof raw === "string" && raw.includes("@")
+        ? raw
+        : "jean.marc@dupont-assur.fr";
+    window.location.href = `mailto:${to}?subject=${encodeURIComponent("Demande client ALXOR Portal")}`;
   };
+
+  if (!sessionReady) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center text-slate-500 font-medium">
+        Chargement...
+      </div>
+    );
+  }
+
+  if (!session) {
+    return null;
+  }
+
+  const avatarLabel = initialsFromName(session.clientName);
+  const portalContracts: Contrat[] = [];
+  const missingDocs = collectMissingDocumentLabels(dossierFields);
+  const ribMissing = isRibMissing(dossierFields);
+  const otherMissing = missingDocs.filter((m) => m !== "RIB");
+  const hasActions = missingDocs.length > 0;
+  const brokerName =
+    getBrokerDisplayName(dossierFields) || "Jean-Marc Dupont";
+  const brokerInitials = initialsFromName(brokerName);
+  const cabinetLabel =
+    typeof dossierFields["Cabinet"] === "string" && dossierFields["Cabinet"].trim()
+      ? String(dossierFields["Cabinet"]).trim()
+      : "Cabinet Dupont & Associés";
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-[#1e293b]">
@@ -82,7 +175,7 @@ const ClientPortal: React.FC = () => {
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 className="w-10 h-10 rounded-full bg-[#4F7CFF] flex items-center justify-center font-black text-white text-xs hover:ring-4 hover:ring-blue-100 transition-all shadow-md"
               >
-                PD
+                {avatarLabel}
               </button>
               
               <AnimatePresence>
@@ -96,8 +189,8 @@ const ClientPortal: React.FC = () => {
                       className="absolute right-0 mt-4 w-64 bg-white border border-slate-200 rounded-3xl shadow-2xl z-20 overflow-hidden"
                     >
                       <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                        <p className="font-black text-slate-900">{client.prenom} {client.nom}</p>
-                        <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1">{client.email}</p>
+                        <p className="font-black text-slate-900">{session.clientName}</p>
+                        <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1">{session.clientEmail}</p>
                       </div>
                       <div className="p-3 space-y-1">
                         <button className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 rounded-2xl transition-colors">
@@ -129,8 +222,16 @@ const ClientPortal: React.FC = () => {
             animate={{ opacity: 1, x: 0 }}
             className="text-4xl md:text-5xl font-black mb-4 tracking-tight text-slate-900"
           >
-            Bonjour, {client.prenom} !
+            Bienvenue dans votre espace client
           </motion.h1>
+          <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.05 }}
+            className="text-2xl md:text-3xl font-black text-[#4F7CFF] tracking-tight mb-4"
+          >
+            {session.clientName}
+          </motion.p>
           <motion.p 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -142,22 +243,49 @@ const ClientPortal: React.FC = () => {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-          {/* Section Contrats */}
           <div className="lg:col-span-2 space-y-8">
             <div className="flex items-center justify-between mb-2">
-               <h2 className="text-2xl font-black flex items-center gap-3 text-slate-900">
-                <ShieldCheck className="text-[#10B981]" size={28} /> 
-                Mes Contrats Actifs
+              <h2 className="text-2xl font-black flex items-center gap-3 text-slate-900">
+                <FileText className="text-[#4F7CFF]" size={28} />
+                Résumé de ma demande
               </h2>
-              <span className="px-3 py-1 bg-green-100 text-green-700 text-[10px] font-black uppercase tracking-widest rounded-full">
-                À jour
-              </span>
+              {hasActions ? (
+                <span className="px-3 py-1 bg-[#4F7CFF]/10 text-[#4F7CFF] border border-[#4F7CFF]/25 text-[10px] font-black uppercase tracking-widest rounded-full">
+                  Action requise
+                </span>
+              ) : (
+                <span className="px-3 py-1 bg-green-100 text-green-700 text-[10px] font-black uppercase tracking-widest rounded-full">
+                  À jour
+                </span>
+              )}
             </div>
-            
+
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm space-y-6">
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Identifiant dossier
+                </p>
+                <p className="font-mono text-sm text-slate-800 break-all">
+                  {session.dossierId}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Type d&apos;assurance demandé
+                </p>
+                <p className="text-xl font-black text-slate-900">
+                  {getInsuranceTypeLabel(dossierFields)}
+                </p>
+              </div>
+              <p className="text-sm text-slate-500 font-medium leading-relaxed pt-2 border-t border-slate-100">
+                Vos contrats souscrits apparaîtront ici lorsque votre courtier les aura rattachés à ce dossier.
+              </p>
+            </div>
+
             <div className="space-y-6">
-              {contracts.filter(c => c.client_id === client.id).map((c, i) => (
+              {portalContracts.map((c, i) => (
                 <motion.div 
-                  key={i}
+                  key={c.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.1 }}
@@ -197,70 +325,114 @@ const ClientPortal: React.FC = () => {
 
           {/* Sidebar / Actions */}
           <div className="space-y-10">
-            {/* Carte Alerte */}
             <div className="bg-gradient-to-br from-white to-slate-50 border border-slate-200 rounded-[2.5rem] p-10 shadow-lg relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform">
                 <Clock size={80} />
               </div>
               <h3 className="text-xl font-black mb-6 text-slate-900">Action Requise</h3>
-              <div className="flex gap-5 mb-10">
-                <div className="w-14 h-14 bg-orange-100 text-orange-500 rounded-2xl flex items-center justify-center shrink-0 shadow-inner">
-                  <Clock size={28} />
+
+              {!hasActions && (
+                <p className="text-sm text-slate-500 font-medium leading-relaxed mb-6">
+                  Votre dossier est à jour sur les pièces suivies pour le moment.
+                </p>
+              )}
+
+              {ribMissing && (
+                <div className="flex gap-5 mb-6">
+                  <div className="w-14 h-14 bg-orange-100 text-orange-500 rounded-2xl flex items-center justify-center shrink-0 shadow-inner">
+                    <Clock size={28} />
+                  </div>
+                  <div>
+                    <p className="font-black text-slate-900 text-base mb-1">RIB manquant</p>
+                    <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                      Veuillez nous transmettre votre RIB pour assurer le prélèvement de vos primes.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-black text-slate-900 text-base mb-1">RIB Manquant</p>
-                  <p className="text-sm text-slate-500 font-medium leading-relaxed">
-                    Veuillez nous transmettre votre nouveau RIB pour assurer le prélèvement de vos primes.
+              )}
+
+              {otherMissing.length > 0 && (
+                <div className="mb-8">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
+                    Autres pièces à fournir
                   </p>
+                  <ul className="text-sm text-slate-600 font-medium space-y-2 list-disc pl-5">
+                    {otherMissing.map((label) => (
+                      <li key={label}>
+                        <span className="font-black text-slate-800">{label}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              </div>
-              
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileChange} 
-                className="hidden" 
+              )}
+
+              {demoToast && (
+                <p className="text-xs font-bold text-[#4F7CFF] mb-4">
+                  Mode démo : fichier reçu. Pour enregistrer le RIB dans Airtable, configurez Cloudinary
+                  (REACT_APP_CLOUDINARY_CLOUD_NAME + REACT_APP_CLOUDINARY_UPLOAD_PRESET) dans .env.local.
+                </p>
+              )}
+
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                accept="image/*,.pdf"
               />
-              
-              <button 
-                onClick={handleUploadClick}
-                disabled={isUploading}
-                className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-xl ${
-                  uploadSuccess 
-                  ? 'bg-green-500 text-white shadow-green-500/20' 
-                  : 'bg-[#4F7CFF] text-white hover:scale-105 shadow-blue-500/20'
-                }`}
-              >
-                {isUploading ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                ) : uploadSuccess ? (
-                  <><CheckCircle size={20} /> Transmis avec succès</>
-                ) : (
-                  <><Upload size={20} /> Téléverser mon RIB</>
-                )}
-              </button>
+
+              {ribMissing && (
+                <button
+                  type="button"
+                  onClick={handleUploadClick}
+                  disabled={isUploading}
+                  className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-xl ${
+                    uploadSuccess
+                      ? "bg-green-500 text-white shadow-green-500/20"
+                      : "bg-[#4F7CFF] text-white hover:scale-105 shadow-blue-500/20"
+                  }`}
+                >
+                  {isUploading ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : uploadSuccess ? (
+                    <>
+                      <CheckCircle size={20} /> Succès — fichier transmis
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={20} /> Téléverser mon RIB
+                    </>
+                  )}
+                </button>
+              )}
             </div>
 
             {/* Support Courtier */}
             <div className="bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-sm">
               <h3 className="text-xl font-black mb-8 text-slate-900">Support Courtier</h3>
               <div className="flex items-center gap-5 mb-8">
-                <div className="w-16 h-16 rounded-[1.5rem] bg-slate-100 flex items-center justify-center font-black text-slate-400 shadow-inner text-xl">
-                  JD
+                <div className="w-16 h-16 rounded-[1.5rem] bg-[#4F7CFF]/10 text-[#4F7CFF] flex items-center justify-center font-black shadow-inner text-lg border border-[#4F7CFF]/20">
+                  {brokerInitials}
                 </div>
                 <div>
-                  <p className="font-black text-slate-900 text-lg">Jean-Marc Dupont</p>
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mt-1">Cabinet Dupont & Associés</p>
+                  <p className="font-black text-slate-900 text-lg">{brokerName}</p>
+                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mt-1">
+                    {cabinetLabel}
+                  </p>
                 </div>
               </div>
               <div className="space-y-4">
-                <button 
+                <button
+                  type="button"
                   onClick={handleContactBroker}
-                  className="w-full py-4 rounded-2xl bg-white border-2 border-slate-100 text-slate-600 font-black text-xs uppercase tracking-[0.2em] hover:bg-slate-50 hover:border-slate-200 transition-all flex items-center justify-center gap-3"
+                  className="w-full py-4 rounded-2xl bg-white border-2 border-[#4F7CFF]/30 text-[#4F7CFF] font-black text-xs uppercase tracking-[0.2em] hover:bg-[#4F7CFF]/5 hover:border-[#4F7CFF]/50 transition-all flex items-center justify-center gap-3"
                 >
                   <Mail size={18} /> Contacter par e-mail
                 </button>
-                <button className="w-full py-4 rounded-2xl bg-white border-2 border-slate-100 text-slate-600 font-black text-xs uppercase tracking-[0.2em] hover:bg-slate-50 hover:border-slate-200 transition-all flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  className="w-full py-4 rounded-2xl bg-white border-2 border-[#4F7CFF]/30 text-[#4F7CFF] font-black text-xs uppercase tracking-[0.2em] hover:bg-[#4F7CFF]/5 hover:border-[#4F7CFF]/50 transition-all flex items-center justify-center gap-3"
+                >
                   <Phone size={18} /> Rappel immédiat
                 </button>
               </div>

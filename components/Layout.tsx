@@ -22,7 +22,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const menuItems = [
     { name: 'Tableau de bord', icon: LayoutDashboard, path: '/dashboard', match: '/dashboard?tab=overview' },
-    { name: 'Prospects', icon: UserPlus, path: '/dashboard?tab=prospects', match: '/dashboard?tab=prospects' },
+    { name: 'Projets en cours', icon: UserPlus, path: '/dashboard?tab=prospects', match: '/dashboard?tab=prospects' },
     { name: 'Clients', icon: Users, path: '/dashboard?tab=clients', match: '/dashboard?tab=clients' },
     { name: 'Documents', icon: FileText, path: '/dashboard?tab=docs', match: '/dashboard?tab=docs' },
     { name: 'Conformité', icon: ShieldCheck, path: '/conformite', match: '/conformite' },

@@ -105,8 +105,20 @@ const ProspectDetail: React.FC = () => {
   const phase2Docs = configDocs.filter(d => d.phase === 2);
   const phase3Docs = configDocs.filter(d => d.phase === 3);
 
-  const phase1Complete = phase1Docs.filter(d => d.obligatoire).every(d => docsUploaded.includes(d.type));
-  const phase2Complete = phase2Docs.filter(d => d.obligatoire).every(d => docsUploaded.includes(d.type));
+  const phase1Complete = phase1Docs
+    .filter((d) => d.obligatoire)
+    .every(
+      (d) =>
+        docsUploaded.includes(d.type) ||
+        (prospect?.airtable_attachments?.[d.type]?.length ?? 0) > 0
+    );
+  const phase2Complete = phase2Docs
+    .filter((d) => d.obligatoire)
+    .every(
+      (d) =>
+        docsUploaded.includes(d.type) ||
+        (prospect?.airtable_attachments?.[d.type]?.length ?? 0) > 0
+    );
   const hasProvisoire = prospect?.documents_provisoires && Object.keys(prospect.documents_provisoires).length > 0;
   
   const signatureDevisValidee = prospect?.signature_manuelle_validee;
@@ -253,7 +265,7 @@ const ProspectDetail: React.FC = () => {
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Identité</p>
                       <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-4">
                         <div className="w-12 h-12 rounded-full bg-blue-100 text-[#4F7CFF] flex items-center justify-center font-black text-sm shrink-0">
-                          {prospect.prenom[0]}{prospect.nom[0]}
+                          {prospect.prenom?.[0] || '?'}{prospect.nom?.[0] || '?'}
                         </div>
                         <p className="text-lg font-black text-slate-900 truncate">{prospect.prenom} {prospect.nom}</p>
                       </div>
@@ -294,7 +306,10 @@ const ProspectDetail: React.FC = () => {
 
                   <div className="space-y-4">
                     {phase1Docs.map(doc => {
-                      const isUploaded = docsUploaded.includes(doc.type);
+                      const airtableFiles = prospect.airtable_attachments?.[doc.type];
+                      const isUploaded =
+                        docsUploaded.includes(doc.type) ||
+                        (airtableFiles?.length ?? 0) > 0;
                       const isScanningThis = isScanning === doc.type;
                       const isProvisoire = doc.peut_etre_provisoire && prospect?.documents_provisoires?.[doc.type];
                       const showProvisoireOption = doc.peut_etre_provisoire && isUploaded;
@@ -309,12 +324,29 @@ const ProspectDetail: React.FC = () => {
                                 <p className="text-base font-bold text-slate-900">{doc.label}</p>
                                 <p className="text-[11px] text-slate-400 font-bold uppercase">{isScanningThis ? "Extraction IA en cours..." : doc.description}</p>
                                 {isProvisoire && <p className="text-[10px] font-bold text-orange-600 mt-0.5">Document provisoire • Échéance : {prospect.documents_provisoires?.[doc.type]?.date_echeance}</p>}
+                                {airtableFiles && airtableFiles.length > 0 && (
+                                  <div className="mt-2 space-y-1">
+                                    <p className="text-[9px] font-black text-[#4F7CFF] uppercase tracking-wider">Fichiers client (Airtable)</p>
+                                    {airtableFiles.map((att, idx) => (
+                                      <a
+                                        key={`${att.url}-${idx}`}
+                                        href={att.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-2 text-[11px] font-bold text-[#4F7CFF] hover:underline"
+                                      >
+                                        <Download size={14} />
+                                        {att.filename || `Pièce ${idx + 1}`}
+                                      </a>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
                               {isUploaded && <button onClick={() => setPreviewingDoc(doc.label)} className="p-3 text-[#4F7CFF] hover:bg-blue-100 rounded-xl transition-all"><Eye size={20} /></button>}
                               {!isUploaded && !isScanningThis ? (
-                                <button onClick={() => triggerFileUpload(doc.type, 1)} className="px-6 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-slate-900 uppercase tracking-widest hover:border-[#4F7CFF] transition-all flex items-center gap-2"><Upload size={14} /> Joindre</button>
+                                <button onClick={() => triggerFileUpload(doc.type, 1)} className="px-6 py-3 bg-white border-2 border-[#4F7CFF]/40 rounded-xl text-[10px] font-black text-[#4F7CFF] uppercase tracking-widest hover:bg-[#4F7CFF]/5 transition-all flex items-center gap-2"><Upload size={14} /> Joindre</button>
                               ) : !isUploaded && isScanningThis ? (
                                 <span className="px-4 py-2 text-blue-500 font-black text-[9px] uppercase tracking-widest">Analyse...</span>
                               ) : (
@@ -361,7 +393,7 @@ const ProspectDetail: React.FC = () => {
                       className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-4 transition-all ${
                         prospect.ia_analysis_done 
                           ? 'bg-[#10B981] text-white cursor-default shadow-lg' 
-                          : phase1Complete ? 'bg-slate-900 text-white hover:scale-[1.01] shadow-xl' : 'bg-slate-50 text-slate-300 cursor-not-allowed'
+                          : phase1Complete ? 'bg-[#4F7CFF] text-white hover:scale-[1.01] shadow-xl shadow-blue-500/25' : 'bg-slate-50 text-slate-300 cursor-not-allowed'
                       }`}
                     >
                       {prospect.ia_analysis_done ? (
@@ -550,7 +582,10 @@ const ProspectDetail: React.FC = () => {
 
                     {phase2Docs.some(d => d.type === 'rib_iban') && (() => {
                       const ribDoc = phase2Docs.find(d => d.type === 'rib_iban');
-                      const ribUploaded = docsUploaded.includes('rib_iban');
+                      const ribAirtable = prospect.airtable_attachments?.['rib_iban'];
+                      const ribUploaded =
+                        docsUploaded.includes('rib_iban') ||
+                        (ribAirtable?.length ?? 0) > 0;
                       return (
                         <div className={`flex flex-col md:flex-row md:items-center justify-between p-5 rounded-3xl border transition-all gap-4 ${ribUploaded ? 'bg-green-50 border-green-200' : 'bg-white border-slate-200 shadow-sm'}`}>
                           <div className="flex items-center gap-5">
@@ -560,6 +595,23 @@ const ProspectDetail: React.FC = () => {
                             <div>
                               <p className="text-base font-bold text-slate-900">{ribDoc?.label || 'RIB'}</p>
                               <p className="text-[11px] text-slate-400 font-bold uppercase">{ribDoc?.description || 'Pour le prélèvement automatique'}</p>
+                              {ribAirtable && ribAirtable.length > 0 && (
+                                <div className="mt-2 space-y-1">
+                                  <p className="text-[9px] font-black text-[#4F7CFF] uppercase tracking-wider">Fichiers client (Airtable)</p>
+                                  {ribAirtable.map((att, idx) => (
+                                    <a
+                                      key={`${att.url}-${idx}`}
+                                      href={att.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-2 text-[11px] font-bold text-[#4F7CFF] hover:underline"
+                                    >
+                                      <Download size={14} />
+                                      {att.filename || `RIB ${idx + 1}`}
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -567,7 +619,7 @@ const ProspectDetail: React.FC = () => {
                               <><button onClick={() => setPreviewingDoc(ribDoc?.label || 'RIB')} className="p-3 text-[#4F7CFF] hover:bg-blue-100 rounded-xl transition-all"><Eye size={20} /></button>
                               <span className="px-4 py-2 bg-green-50 text-green-600 rounded-xl font-black text-[10px] uppercase border border-green-100">Reçu</span></>
                             ) : (
-                              <button onClick={() => triggerFileUpload('rib_iban', 2)} className="px-6 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-slate-900 uppercase tracking-widest hover:border-[#4F7CFF] transition-all flex items-center gap-2"><Upload size={14} /> Joindre</button>
+                              <button onClick={() => triggerFileUpload('rib_iban', 2)} className="px-6 py-3 bg-white border-2 border-[#4F7CFF]/40 rounded-xl text-[10px] font-black text-[#4F7CFF] uppercase tracking-widest hover:bg-[#4F7CFF]/5 transition-all flex items-center gap-2"><Upload size={14} /> Joindre</button>
                             )}
                           </div>
                         </div>
@@ -575,7 +627,10 @@ const ProspectDetail: React.FC = () => {
                     })()}
 
                     {phase2Docs.filter(d => d.type !== 'signature_devis_fic' && d.type !== 'rib_iban').map(doc => {
-                      const isUploaded = docsUploaded.includes(doc.type);
+                      const atFiles = prospect.airtable_attachments?.[doc.type];
+                      const isUploaded =
+                        docsUploaded.includes(doc.type) ||
+                        (atFiles?.length ?? 0) > 0;
                       return (
                         <div key={doc.type} className={`flex flex-col sm:flex-row sm:items-center justify-between p-5 rounded-3xl border transition-all gap-4 ${isUploaded ? 'bg-slate-50 border-slate-100' : 'bg-white border-slate-200 shadow-sm'}`}>
                           <div className="flex items-center gap-5">
@@ -585,11 +640,28 @@ const ProspectDetail: React.FC = () => {
                             <div>
                               <p className="text-base font-bold text-slate-900">{doc.label}</p>
                               <p className="text-[11px] text-slate-400 font-bold uppercase">{doc.description}</p>
+                              {atFiles && atFiles.length > 0 && (
+                                <div className="mt-2 space-y-1">
+                                  <p className="text-[9px] font-black text-[#4F7CFF] uppercase tracking-wider">Fichiers client (Airtable)</p>
+                                  {atFiles.map((att, idx) => (
+                                    <a
+                                      key={`${att.url}-${idx}`}
+                                      href={att.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-2 text-[11px] font-bold text-[#4F7CFF] hover:underline"
+                                    >
+                                      <Download size={14} />
+                                      {att.filename || `Fichier ${idx + 1}`}
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
                             {isUploaded && <button onClick={() => setPreviewingDoc(doc.label)} className="p-3 text-[#4F7CFF] hover:bg-blue-100 rounded-xl transition-all"><Eye size={20} /></button>}
-                            {!isUploaded ? <button onClick={() => triggerFileUpload(doc.type, 2)} className="px-6 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-slate-900 uppercase tracking-widest hover:border-[#4F7CFF] transition-all flex items-center gap-2"><Upload size={14} /> Joindre</button> : <span className="px-4 py-2 bg-green-50 text-green-600 rounded-xl font-black text-[10px] uppercase border border-green-100">Reçu</span>}
+                            {!isUploaded ? <button onClick={() => triggerFileUpload(doc.type, 2)} className="px-6 py-3 bg-white border-2 border-[#4F7CFF]/40 rounded-xl text-[10px] font-black text-[#4F7CFF] uppercase tracking-widest hover:bg-[#4F7CFF]/5 transition-all flex items-center gap-2"><Upload size={14} /> Joindre</button> : <span className="px-4 py-2 bg-green-50 text-green-600 rounded-xl font-black text-[10px] uppercase border border-green-100">Reçu</span>}
                           </div>
                         </div>
                       );

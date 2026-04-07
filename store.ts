@@ -37,6 +37,7 @@ interface AppState {
   validateFinalContractSignature: (prospectId: string) => void;
   playNewLeadSound: () => void;
   calculateAndSetGES: (prospectId: string) => void;
+  mergeProspectsFromAirtable: (incoming: Prospect[]) => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -275,4 +276,15 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   getProspectDocs: (id) => get().prospectDocuments[id] || EMPTY_DOCS,
+
+  mergeProspectsFromAirtable: (incoming) =>
+    set((s) => {
+      const ids = new Set(incoming.map((p) => p.id));
+      return {
+        prospects: [
+          ...incoming,
+          ...s.prospects.filter((p) => !ids.has(p.id)),
+        ],
+      };
+    }),
 }));
