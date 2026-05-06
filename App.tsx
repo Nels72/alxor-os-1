@@ -8,6 +8,7 @@ import ProspectDetail from './Pages/ProspectDetail';
 import ClientPortal from './Pages/ClientPortal';
 import Conformite from './Pages/Conformite';
 import Login from './Pages/Login';
+import LoginAdmin from './Pages/LoginAdmin';
 import { useStore } from './store';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -22,6 +23,7 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/login-admin" element={<LoginAdmin />} />
           <Route
             path="/dashboard"
             element={

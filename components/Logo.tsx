@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { motion } from 'framer-motion';
 
@@ -10,51 +9,53 @@ interface LogoProps {
 }
 
 const Logo: React.FC<LogoProps> = ({ 
-  className = "h-10", 
-  textColor = "#121417", 
-  osColor = "#6B7280", 
-  lineColor = "#4F7CFF" 
+  className = "h-12", 
+  textColor = "#FFFFFF",
+  osColor = "#E3DFFE",
+  lineColor = "#4F7CFF"
 }) => {
   return (
-    <motion.svg 
+    <motion.svg
       whileHover={{ scale: 1.02 }}
       transition={{ type: "spring", stiffness: 400, damping: 17 }}
       className={`${className} cursor-pointer origin-left`} 
-      viewBox="0 0 620 120" 
-      fill="none" 
+      // ViewBox élargie pour laisser respirer l'espacement et l'extension du trait
+      viewBox="0 0 900 120" 
+      fill="none"
       xmlns="http://www.w3.org/2000/svg"
       preserveAspectRatio="xMinYMid meet"
     >
-      {/* Lettres ALXOR avec un espacement ultra-large pour un look de marque de luxe/SaaS premium */}
-      <text 
+      {/* "alxor" : minuscules, gras, espacement x1.5 (81px) */}
+      <text
         x="20" 
-        y="70" 
-        fontFamily="Inter, sans-serif" 
-        fontWeight="700" 
-        fontSize="56" 
-        letterSpacing="54" 
+        y="65" 
+        fontFamily="Inter, sans-serif"
+        fontWeight="700"
+        fontSize="64" 
+        letterSpacing="70" 
         fill={textColor}
+        style={{ textTransform: 'lowercase' }}
       >
-        ALXOR
+        alxor
       </text>
-      
-      {/* Ligne d'accent bleue : s'arrête précisément sous le 'R' de ALXOR */}
+
+      {/* Trait : affiné (2px) et étiré de deux espaces après le 'r' */}
       <rect 
         x="20" 
-        y="90" 
-        width="465" 
-        height="5" 
-        fill={lineColor} 
-        rx="2.5"
+        y="85" 
+        width="600" 
+        height="2" 
+        fill={lineColor}
+        rx="1"
       />
-      
-      {/* OS lisible, décalé pour suivre l'extension du mot principal */}
-      <text 
-        x="500" 
-        y="94" 
-        fontFamily="Inter, sans-serif" 
-        fontWeight="800" 
-        fontSize="32" 
+
+      {/* "OS" : Majuscules, fin (400), taille augmentée (48) */}
+      <text
+        x="630" 
+        y="88" 
+        fontFamily="Inter, sans-serif"
+        fontWeight="400" 
+        fontSize="48" 
         fill={osColor}
       >
         OS

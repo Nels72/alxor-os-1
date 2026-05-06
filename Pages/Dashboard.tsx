@@ -394,12 +394,12 @@ const Dashboard: React.FC = () => {
               >
                 <td className="px-8 py-5" onClick={() => navigate(`/prospects/${p.id}`)}>
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-black text-slate-400 shrink-0 text-xs relative">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-semibold text-slate-400 shrink-0 text-xs relative">
                        {(p.nom?.[0] || '?').toUpperCase()}{(p.prenom?.[0] || '?').toUpperCase()}
                        {p.priority === 'Critique' && <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></div>}
                     </div>
                     <div>
-                      <p className="font-bold text-sm text-slate-900">{p.prenom} {p.nom}</p>
+                      <p className="font-semibold text-sm text-slate-900">{p.prenom} {p.nom}</p>
                       <div className="flex gap-2 mt-1">
                         <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase border ${p.priority ? PRIORITY_BADGE[p.priority] : 'bg-slate-50 text-slate-400'}`}>
                           {p.priority || 'Normale'}
@@ -412,7 +412,7 @@ const Dashboard: React.FC = () => {
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-2">
                       <Target size={14} className="text-[#4F7CFF]" />
-                      <span className="text-xs font-bold text-slate-700">{p.type_contrat_demande}</span>
+                      <span className="text-xs font-medium text-slate-700">{p.type_contrat_demande}</span>
                     </div>
                     {p.ia_analysis_done && p.ai_suggestions && (
                       <div className="flex gap-1">
@@ -799,10 +799,10 @@ const Dashboard: React.FC = () => {
                           {c.type === 'PRO' ? <Building2 size={18} className="text-blue-600" /> : <UserIcon size={18} className="text-blue-600" />}
                         </div>
                         <div>
-                          <p className="text-sm font-black text-slate-900 leading-tight" style={{ fontFamily: 'Open Sans, sans-serif' }}>
+                          <p className="text-sm font-semibold text-slate-900 leading-tight" style={{ fontFamily: 'Open Sans, sans-serif' }}>
                             {c.type === 'PRO' ? (c.raison_sociale || `${c.prenom} ${c.nom}`) : `${c.prenom} ${c.nom}`}
                           </p>
-                          <p className="text-[9px] font-black uppercase tracking-widest mt-0.5 text-blue-600" style={{ fontFamily: 'Open Sans, sans-serif' }}>
+                          <p className="text-[9px] font-medium uppercase tracking-widest mt-0.5 text-blue-600" style={{ fontFamily: 'Open Sans, sans-serif' }}>
                             {c.type === 'PRO' ? `GÉRANT : ${c.prenom} ${c.nom}` : 'PARTICULIER'}
                           </p>
                         </div>

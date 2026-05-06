@@ -6,40 +6,55 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ALXOR OS - Votre Collaborateur Virtuel</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+          },
+        },
+      };
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f8fafc; /* Professional light gray-blue */
-            color: #1e293b;
+            background-color: #121127;
+            color: #e9eef9;
             margin: 0;
             overflow-x: hidden;
         }
         h1, h2, h3, h4 {
-            font-family: 'Manrope', sans-serif;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+        }
+        .font-bold {
+            font-weight: 600 !important;
         }
         ::-webkit-scrollbar {
             width: 8px;
         }
         ::-webkit-scrollbar-track {
-            background: #f1f5f9;
+            background: #1b1836;
         }
         ::-webkit-scrollbar-thumb {
-            background: #4F7CFF;
+            background: #90d4bf;
             border-radius: 4px;
         }
         .text-gradient {
-            background: linear-gradient(90deg, #4F7CFF 0%, #2ED3B7 100%);
+            background: linear-gradient(90deg, #cfbcff 0%, #90d4bf 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
         .bg-gradient-primary {
-            background: linear-gradient(135deg, #4F7CFF 0%, #2ED3B7 100%);
+            background: linear-gradient(135deg, #0F5B4B 0%, #90d4bf 100%);
         }
         .glass-card {
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(226, 232, 240, 0.8);
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(28px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
         }
     </style>
 <script type="importmap">
