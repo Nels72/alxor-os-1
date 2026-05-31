@@ -45,8 +45,13 @@ import { useStore } from '../store';
 import { PriorityLevel, Client, Contrat, Amendment } from '../types';
 import {
   listDossierRecords,
-  mapDossierToProspect,
+  mapDossiersBatch,
 } from '../services/dossiersAirtable';
+import { resetRateLimiter } from '../services/airtable';
+
+/** Cache Dashboard : évite de recharger Airtable à chaque navigation */
+let dashboardCache: { data: import('../types').Prospect[]; ts: number } | null = null;
+const CACHE_TTL_MS = 60_000; // 1 minute
 
 function isContractResigned(con: Contrat): boolean {
   return con.statut === 'resilie';
@@ -199,19 +204,54 @@ const Dashboard: React.FC = () => {
   const setClientNotes = useStore(state => state.setClientNotes);
   const updateContrat = useStore(state => state.updateContrat);
 
+  const [airtableLoading, setAirtableLoading] = useState(false);
+  const [airtableError, setAirtableError] = useState<string | null>(null);
+  const airtableConfigured =
+    !!(process.env.REACT_APP_AIRTABLE_BASE_ID && (
+      process.env.REACT_APP_AIRTABLE_TOKEN ||
+      process.env.REACT_APP_AIRTABLE_PAT ||
+      process.env.REACT_APP_AIRTABLE_API_KEY
+    ));
+
   useEffect(() => {
     if (tab !== 'prospects') return;
-    let cancelled = false;
+    if (!airtableConfigured) return;
+
+    // Si le cache est encore frais, on l'utilise directement (0 appel API)
+    if (dashboardCache && Date.now() - dashboardCache.ts < CACHE_TTL_MS) {
+      mergeProspectsFromAirtable(dashboardCache.data);
+      return;
+    }
+
+    const abortCtrl = new AbortController();
+    setAirtableLoading(true);
+    setAirtableError(null);
     (async () => {
-      const rows = await listDossierRecords();
-      if (cancelled || rows.length === 0) return;
-      const mapped = await Promise.all(rows.map((r) => mapDossierToProspect(r)));
-      if (!cancelled) mergeProspectsFromAirtable(mapped);
+      try {
+        const rows = await listDossierRecords();
+        if (abortCtrl.signal.aborted) return;
+        if (rows.length === 0) {
+          setAirtableLoading(false);
+          return;
+        }
+        const mapped = await mapDossiersBatch(rows, abortCtrl.signal);
+        if (!abortCtrl.signal.aborted) {
+          dashboardCache = { data: mapped, ts: Date.now() };
+          mergeProspectsFromAirtable(mapped);
+          setAirtableLoading(false);
+        }
+      } catch (err) {
+        if (!abortCtrl.signal.aborted) {
+          setAirtableError('Erreur lors du chargement Airtable. Vérifiez votre token et base ID.');
+          setAirtableLoading(false);
+        }
+      }
     })();
     return () => {
-      cancelled = true;
+      abortCtrl.abort();
+      resetRateLimiter(); // Libère la file d'attente pour les prochaines requêtes
     };
-  }, [tab, mergeProspectsFromAirtable]);
+  }, [tab, mergeProspectsFromAirtable, airtableConfigured]);
 
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
   const [searchHighlight, setSearchHighlight] = useState<{ clientId: string; contractId?: string; avenantIndex?: number; phase: 'avenant' | 'contract' } | null>(null);
@@ -358,6 +398,31 @@ const Dashboard: React.FC = () => {
 
   const renderProspectsList = () => (
     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+      {!airtableConfigured && (
+        <div className="flex items-start gap-3 px-6 py-4 bg-amber-50 border-b border-amber-200">
+          <AlertCircle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-amber-800">Connexion Airtable non configurée</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Créez un fichier <code className="bg-amber-100 px-1 rounded font-mono">.env</code> à la racine avec{' '}
+              <code className="bg-amber-100 px-1 rounded font-mono">REACT_APP_AIRTABLE_BASE_ID</code> et{' '}
+              <code className="bg-amber-100 px-1 rounded font-mono">REACT_APP_AIRTABLE_TOKEN</code> pour charger vos dossiers. Les données affichées sont des exemples.
+            </p>
+          </div>
+        </div>
+      )}
+      {airtableConfigured && airtableError && (
+        <div className="flex items-start gap-3 px-6 py-4 bg-red-50 border-b border-red-200">
+          <AlertCircle size={18} className="text-red-500 shrink-0 mt-0.5" />
+          <p className="text-sm font-bold text-red-700">{airtableError}</p>
+        </div>
+      )}
+      {airtableConfigured && airtableLoading && (
+        <div className="flex items-center gap-3 px-6 py-3 bg-blue-50 border-b border-blue-100">
+          <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
+          <p className="text-xs font-bold text-blue-700">Synchronisation Airtable en cours…</p>
+        </div>
+      )}
       <div className="p-6 md:p-8 border-b border-slate-200 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <h3 className="text-xl font-black text-slate-900 tracking-tight">Flux de Production</h3>
         <div className="flex gap-2 md:gap-4 w-full md:w-auto">

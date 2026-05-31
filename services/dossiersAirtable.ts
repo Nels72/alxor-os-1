@@ -1,5 +1,6 @@
 import type { Prospect } from '../types';
 import type { AirtableRecord } from './airtableService';
+import { airtableFetch } from './airtable';
 
 const BEARER =
   process.env.REACT_APP_AIRTABLE_TOKEN ||
@@ -227,7 +228,7 @@ async function fetchJsonRecord(
 ): Promise<AirtableRecord | null> {
   if (!BEARER || !BASE_ID) return null;
   const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}/${encodeURIComponent(id)}`;
-  const res = await fetch(url, { headers: headers() });
+  const res = await airtableFetch(url, { headers: headers() });
   if (!res.ok) return null;
   return res.json();
 }
@@ -239,7 +240,7 @@ export async function fetchDossierById(
     return { error: 'Configuration Airtable manquante.' };
   }
   const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(DOSSIERS_TABLE)}/${encodeURIComponent(dossierId.trim())}`;
-  const res = await fetch(url, { headers: headers() });
+  const res = await airtableFetch(url, { headers: headers() });
   if (res.status === 404) return { error: 'Dossier introuvable.' };
   if (!res.ok) return { error: `Erreur ${res.status}` };
   const record: AirtableRecord = await res.json();
@@ -252,7 +253,7 @@ export async function listDossierRecords(): Promise<AirtableRecord[]> {
   let offset = '';
   do {
     const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(DOSSIERS_TABLE)}?pageSize=100${offset ? `&offset=${encodeURIComponent(offset)}` : ''}`;
-    const res = await fetch(url, { headers: headers() });
+    const res = await airtableFetch(url, { headers: headers() });
     if (!res.ok) break;
     const data = await res.json();
     const recs = data.records as AirtableRecord[];
@@ -260,6 +261,37 @@ export async function listDossierRecords(): Promise<AirtableRecord[]> {
     offset = typeof data.offset === 'string' ? data.offset : '';
   } while (offset);
   return out;
+}
+
+/** Cache de contacts déjà récupérés pour éviter les appels répétitifs. */
+const contactCache = new Map<string, AirtableRecord | null>();
+
+export function clearContactCache(): void {
+  contactCache.clear();
+}
+
+async function fetchContactCached(contactId: string): Promise<AirtableRecord | null> {
+  if (contactCache.has(contactId)) return contactCache.get(contactId) ?? null;
+  const record = await fetchJsonRecord(CONTACTS_TABLE, contactId);
+  contactCache.set(contactId, record);
+  return record;
+}
+
+/**
+ * Mappe un lot de dossiers en prospects de manière séquentielle.
+ * Supporte l'annulation via AbortSignal pour ne pas bloquer
+ * le rate limiter quand l'utilisateur quitte la page.
+ */
+export async function mapDossiersBatch(
+  dossiers: AirtableRecord[],
+  signal?: AbortSignal
+): Promise<Prospect[]> {
+  const results: Prospect[] = [];
+  for (const d of dossiers) {
+    if (signal?.aborted) break;
+    results.push(await mapDossierToProspect(d));
+  }
+  return results;
 }
 
 export async function mapDossierToProspect(
@@ -273,7 +305,7 @@ export async function mapDossierToProspect(
   let telephone = '—';
 
   if (contactIds.length > 0) {
-    const contact = await fetchJsonRecord(CONTACTS_TABLE, contactIds[0]);
+    const contact = await fetchContactCached(contactIds[0]);
     if (contact?.fields) {
       const id = extractContactIdentity(contact.fields);
       nom = id.nom;
@@ -409,7 +441,7 @@ export async function patchDossierFields(
     return { ok: false, error: 'Configuration Airtable manquante.' };
   }
   const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(DOSSIERS_TABLE)}/${encodeURIComponent(dossierId.trim())}`;
-  const res = await fetch(url, {
+  const res = await airtableFetch(url, {
     method: 'PATCH',
     headers: headers(),
     body: JSON.stringify({ fields }),

@@ -13,6 +13,8 @@ export interface VerifiedClientSession {
   contact: AirtableRecord | null;
 }
 
+import { airtableFetch } from './airtable';
+
 const AIRTABLE_BEARER =
   process.env.REACT_APP_AIRTABLE_TOKEN ||
   process.env.REACT_APP_AIRTABLE_PAT ||
@@ -124,7 +126,7 @@ async function fetchRecord(
   recordId: string
 ): Promise<{ record?: AirtableRecord; error?: string; status?: number }> {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}/${encodeURIComponent(recordId)}`;
-  const response = await fetch(url, { headers: authHeaders() });
+  const response = await airtableFetch(url, { headers: authHeaders() });
 
   if (response.status === 401) {
     const detail = await parseErrorMessage(response);

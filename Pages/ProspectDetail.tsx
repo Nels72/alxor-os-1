@@ -14,6 +14,14 @@ import {
 import { useStore } from '../store';
 import { WORKFLOW_DOCUMENTS } from '../lib/preDevisDocuments';
 import { AISuggestion, PriorityLevel } from '../types';
+import { getDossierById, getContactById, mapDossierToProspect, mapDocTypeToAirtable, type AirtableDocument } from '../services/airtable';
+import { saveDDAChoixFinal } from '../services/ddaService';
+import FicheTarification from '../components/FicheTarification';
+import FicFormModal from '../components/FicFormModal';
+import { extractDevisData, type DevisExtrait } from '../services/devisExtraction';
+import { uploadFicPdf } from '../services/documentUpload';
+
+const EMPTY_AT_DOCS: AirtableDocument[] = [];
 
 const STATUS_LABELS: Record<string, string> = {
   nouveau: 'NOUVEAU',
@@ -41,14 +49,51 @@ const ProspectDetail: React.FC = () => {
   const navigate = useNavigate();
 
   const prospect = useStore(state => state.prospects.find(p => p.id === id));
+  const addProspect = useStore(state => state.addProspect);
   const docsUploaded = useStore(state => id ? state.getProspectDocs(id) : []);
-  
+  const [airtableLoading, setAirtableLoading] = useState(false);
+  const [airtableError, setAirtableError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!prospect && id?.startsWith('rec')) {
+      setAirtableLoading(true);
+      getDossierById(id)
+        .then(async (dossier) => {
+          let contact = null;
+          const contactIds = dossier.fields.Contact;
+          if (contactIds?.length) {
+            contact = await getContactById(contactIds[0]).catch(() => null);
+          }
+          const mapped = mapDossierToProspect(dossier, contact);
+          addProspect({
+            ...mapped,
+            ges_score: mapped.ges_score ?? 0,
+            statut: (mapped.statut as any) || 'nouveau',
+            created_at: mapped.created_at || new Date().toISOString(),
+            type_contrat_demande: mapped.type_contrat_demande || 'auto',
+          } as any);
+        })
+        .catch((err) => setAirtableError(err instanceof Error ? err.message : 'Dossier introuvable'))
+        .finally(() => setAirtableLoading(false));
+    }
+  }, [id, prospect]);
+
   const uploadDoc = useStore(state => state.uploadDoc);
+  const uploadDocReal = useStore(state => state.uploadDocReal);
+  const loadDocumentsForDossier = useStore(state => state.loadDocumentsForDossier);
+  const qualifyDocReal = useStore(state => state.qualifyDocReal);
+  const airtableDocs = useStore(state => id ? state.airtableDocuments[id] : undefined) ?? EMPTY_AT_DOCS;
   const updateProspect = useStore(state => state.updateProspect);
   const runIAAnalysis = useStore(state => state.runIAAnalysis);
   const validateManualSignature = useStore(state => state.validateManualSignature);
   const validateFinalContractSignature = useStore(state => state.validateFinalContractSignature);
   const handleConversion = useStore(state => state.handleConversion);
+
+  useEffect(() => {
+    if (id?.startsWith('rec')) {
+      loadDocumentsForDossier(id);
+    }
+  }, [id]);
 
   const [activeTab, setActiveTab] = useState<'docs' | 'info'>('info');
   const [showConversionSuccessModal, setShowConversionSuccessModal] = useState(false);
@@ -65,6 +110,12 @@ const ProspectDetail: React.FC = () => {
     franchise: '',
     garanties_summary: '',
   });
+  const [showFicheTarification, setShowFicheTarification] = useState(false);
+  const [showFicModal, setShowFicModal] = useState(false);
+  const [devisExtrait, setDevisExtrait] = useState<DevisExtrait | null>(null);
+  const [isExtractingDevis, setIsExtractingDevis] = useState(false);
+  const [devisExtractionError, setDevisExtractionError] = useState<string | null>(null);
+  const [ficGenerated, setFicGenerated] = useState(false);
   const [editingArbitrageFor, setEditingArbitrageFor] = useState<string | null>(null);
   const [draftNoteExpertise, setDraftNoteExpertise] = useState('');
   const [editingProvisoireFor, setEditingProvisoireFor] = useState<string | null>(null);
@@ -100,6 +151,11 @@ const ProspectDetail: React.FC = () => {
 
   const productKey = prospect?.type_contrat_demande?.toLowerCase().replace(/\s+/g, '_') || 'auto';
   const configDocs = useMemo(() => WORKFLOW_DOCUMENTS[productKey] || WORKFLOW_DOCUMENTS['auto'], [productKey]);
+
+  const findAirtableDoc = (workflowType: string): AirtableDocument | undefined => {
+    const airtableType = mapDocTypeToAirtable(workflowType);
+    return airtableDocs.find(d => d.fields.Type_Document === airtableType || d.fields.Nom_Fichier?.toLowerCase().includes(workflowType.replace(/_/g, ' ')));
+  };
 
   const phase1Docs = configDocs.filter(d => d.phase === 1);
   const phase2Docs = configDocs.filter(d => d.phase === 2);
@@ -178,21 +234,34 @@ const ProspectDetail: React.FC = () => {
   };
 
   const triggerFileUpload = (type: string, phase: number) => {
+    const docConfig = configDocs.find(d => d.type === type);
     const input = document.createElement('input');
     input.type = 'file';
+    input.accept = '.pdf,.jpg,.jpeg,.png,.webp';
     input.onchange = async (e: any) => {
       if (e.target.files && e.target.files[0] && id) {
+        const file = e.target.files[0] as File;
         if (phase === 1) {
           setIsScanning(type);
-          await new Promise(resolve => setTimeout(resolve, 1500)); 
+        }
+        try {
+          if (id.startsWith('rec')) {
+            await uploadDocReal(id, type, docConfig?.label || type, file);
+          } else {
+            uploadDoc(id, type);
+          }
+        } catch (err) {
+          console.error('Erreur upload:', err);
+        } finally {
           setIsScanning(null);
         }
-        uploadDoc(id, type);
       }
     };
     input.click();
   };
 
+  if (airtableLoading) return <Layout><div className="p-10 text-slate-900 font-bold text-center text-xl flex items-center justify-center gap-3"><Loader2 className="animate-spin" size={24} /> Chargement du dossier...</div></Layout>;
+  if (airtableError) return <Layout><div className="p-10 text-red-600 font-bold text-center text-xl">{airtableError}</div></Layout>;
   if (!prospect) return <Layout><div className="p-10 text-slate-900 font-bold text-center text-xl">Dossier introuvable...</div></Layout>;
 
   return (
@@ -307,11 +376,14 @@ const ProspectDetail: React.FC = () => {
                   <div className="space-y-4">
                     {phase1Docs.map(doc => {
                       const airtableFiles = prospect.airtable_attachments?.[doc.type];
+                      const atDoc = findAirtableDoc(doc.type);
                       const isUploaded =
                         docsUploaded.includes(doc.type) ||
-                        (airtableFiles?.length ?? 0) > 0;
+                        (airtableFiles?.length ?? 0) > 0 ||
+                        !!atDoc;
                       const isScanningThis = isScanning === doc.type;
-                      const isProvisoire = doc.peut_etre_provisoire && prospect?.documents_provisoires?.[doc.type];
+                      const isProvisoire = atDoc?.fields.Statut_Document === 'Provisoire' || (doc.peut_etre_provisoire && prospect?.documents_provisoires?.[doc.type]);
+                      const provisoireEcheance = atDoc?.fields.Date_Echeance_Provisoire || prospect?.documents_provisoires?.[doc.type]?.date_echeance;
                       const showProvisoireOption = doc.peut_etre_provisoire && isUploaded;
                       return (
                         <div key={doc.type} className={`flex flex-col gap-4 p-5 rounded-3xl border transition-all ${isUploaded ? (isProvisoire ? 'bg-orange-50/50 border-orange-200' : 'bg-slate-50 border-slate-100') : 'bg-white border-slate-200 shadow-sm'}`}>
@@ -322,8 +394,17 @@ const ProspectDetail: React.FC = () => {
                               </div>
                               <div>
                                 <p className="text-base font-bold text-slate-900">{doc.label}</p>
-                                <p className="text-[11px] text-slate-400 font-bold uppercase">{isScanningThis ? "Extraction IA en cours..." : doc.description}</p>
-                                {isProvisoire && <p className="text-[10px] font-bold text-orange-600 mt-0.5">Document provisoire • Échéance : {prospect.documents_provisoires?.[doc.type]?.date_echeance}</p>}
+                                <p className="text-[11px] text-slate-400 font-bold uppercase">{isScanningThis ? "Téléversement en cours..." : doc.description}</p>
+                                {isProvisoire && <p className="text-[10px] font-bold text-orange-600 mt-0.5">Document provisoire {provisoireEcheance ? `• Échéance : ${provisoireEcheance}` : ''}</p>}
+                                {atDoc && (
+                                  <div className="mt-1">
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider ${atDoc.fields.Statut_Document === 'Valide' ? 'bg-green-50 text-green-600 border border-green-100' : atDoc.fields.Statut_Document === 'Provisoire' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}>
+                                      {atDoc.fields.Document_Conforme ? <CheckCircle size={10} /> : <AlertCircle size={10} />}
+                                      {atDoc.fields.Statut_Document || 'En attente'}
+                                    </span>
+                                    <span className="text-[9px] text-slate-400 ml-2">{atDoc.fields.Nom_Fichier}</span>
+                                  </div>
+                                )}
                                 {airtableFiles && airtableFiles.length > 0 && (
                                   <div className="mt-2 space-y-1">
                                     <p className="text-[9px] font-black text-[#4F7CFF] uppercase tracking-wider">Fichiers client (Airtable)</p>
@@ -350,7 +431,7 @@ const ProspectDetail: React.FC = () => {
                               ) : !isUploaded && isScanningThis ? (
                                 <span className="px-4 py-2 text-blue-500 font-black text-[9px] uppercase tracking-widest">Analyse...</span>
                               ) : (
-                                <span className="px-4 py-2 bg-green-50 text-green-600 rounded-xl font-black text-[9px] uppercase border border-green-100">Scanné</span>
+                                <span className="px-4 py-2 bg-green-50 text-green-600 rounded-xl font-black text-[9px] uppercase border border-green-100">Reçu</span>
                               )}
                             </div>
                           </div>
@@ -360,8 +441,17 @@ const ProspectDetail: React.FC = () => {
                                 <input type="checkbox" checked={!!isProvisoire || editingProvisoireFor === doc.type}
                                   onChange={(e) => {
                                     if (!id || !prospect) return;
-                                    if (e.target.checked) { setEditingProvisoireFor(doc.type); setDraftDateEcheance(prospect.documents_provisoires?.[doc.type]?.date_echeance || new Date(Date.now() + 90*24*60*60*1000).toISOString().slice(0,10)); }
-                                    else { setEditingProvisoireFor(null); const { [doc.type]: _, ...rest } = prospect.documents_provisoires || {}; updateProspect(id, { documents_provisoires: Object.keys(rest).length ? rest : undefined }); }
+                                    if (e.target.checked) {
+                                      setEditingProvisoireFor(doc.type);
+                                      setDraftDateEcheance(provisoireEcheance || new Date(Date.now() + 90*24*60*60*1000).toISOString().slice(0,10));
+                                    } else {
+                                      setEditingProvisoireFor(null);
+                                      if (atDoc) {
+                                        qualifyDocReal(atDoc.id, id, 'Valide');
+                                      }
+                                      const { [doc.type]: _, ...rest } = prospect.documents_provisoires || {};
+                                      updateProspect(id, { documents_provisoires: Object.keys(rest).length ? rest : undefined });
+                                    }
                                   }}
                                   className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500" />
                                 <span className="text-sm font-bold text-slate-700">Document Provisoire</span>
@@ -372,12 +462,18 @@ const ProspectDetail: React.FC = () => {
                                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Date d&apos;échéance du provisoire</label>
                                     <input type="date" value={draftDateEcheance} onChange={e => setDraftDateEcheance(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-medium text-slate-900" />
                                   </div>
-                                  <button onClick={() => { updateProspect(prospect.id, { documents_provisoires: { ...prospect.documents_provisoires, [doc.type]: { date_echeance: draftDateEcheance } } }); setEditingProvisoireFor(null); }} className="px-4 py-2 rounded-xl bg-orange-500 text-white text-[10px] font-black uppercase">OK</button>
+                                  <button onClick={() => {
+                                    if (atDoc) {
+                                      qualifyDocReal(atDoc.id, id!, 'Provisoire', draftDateEcheance);
+                                    }
+                                    updateProspect(prospect.id, { documents_provisoires: { ...prospect.documents_provisoires, [doc.type]: { date_echeance: draftDateEcheance } } });
+                                    setEditingProvisoireFor(null);
+                                  }} className="px-4 py-2 rounded-xl bg-orange-500 text-white text-[10px] font-black uppercase">OK</button>
                                   <button onClick={() => setEditingProvisoireFor(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-[10px] font-bold">Annuler</button>
                                 </div>
                               )}
                               {isProvisoire && editingProvisoireFor !== doc.type && (
-                                <button onClick={() => { setEditingProvisoireFor(doc.type); setDraftDateEcheance(prospect.documents_provisoires?.[doc.type]?.date_echeance || ''); }} className="mt-2 text-[10px] font-bold text-orange-600 hover:underline">Modifier la date</button>
+                                <button onClick={() => { setEditingProvisoireFor(doc.type); setDraftDateEcheance(provisoireEcheance || ''); }} className="mt-2 text-[10px] font-bold text-orange-600 hover:underline">Modifier la date</button>
                               )}
                             </div>
                           )}
@@ -476,8 +572,15 @@ const ProspectDetail: React.FC = () => {
                               </div>
 
                               <div className="flex flex-col gap-2">
-                                <button 
-                                  onClick={() => updateProspect(prospect.id, { ai_suggestion: sugg })} 
+                                <button
+                                  onClick={() => {
+                                    updateProspect(prospect.id, { ai_suggestion: sugg });
+                                    if (prospect.id.startsWith('rec')) {
+                                      saveDDAChoixFinal(prospect.id, sugg.compagnie, sugg.note_expertise_courtier || `Score ${sugg.score}% — ${sugg.justification[0] || ''}`).catch(
+                                        (err) => console.error('Erreur DDA choix:', err)
+                                      );
+                                    }
+                                  }}
                                   className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.15em] transition-all shadow-md flex items-center justify-center gap-2 ${
                                     isSelected ? 'bg-[#10B981] text-white shadow-lg' : 'bg-slate-900 text-white hover:bg-slate-800'
                                   }`}
@@ -533,16 +636,69 @@ const ProspectDetail: React.FC = () => {
                         })}
                       </div>
 
-                      {/* BOUTON ÉDITER DEVIS & FIC */}
-                      {prospect.statut !== 'converti' && !signatureDevisValidee && (
-                        <div className="mt-10">
-                          <button 
-                            onClick={() => setIsQuoteModalOpen(true)}
-                            className="w-full py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-4 transition-all shadow-xl bg-slate-900 text-white hover:scale-[1.01]"
+                      {/* BOUTON FICHE TARIFICATION */}
+                      {prospect.ai_suggestion && (
+                        <div className="mt-6">
+                          <button
+                            onClick={() => setShowFicheTarification(true)}
+                            className="w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.15em] flex items-center justify-center gap-3 transition-all border-2 border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100"
                           >
-                            <FileText size={22} />
-                            {prospect.statut === 'devis_envoye' ? 'Devis & FIC édités et en signature' : 'Editer devis & FIC'}
+                            <FileText size={20} /> Fiche Tarification Extranet
                           </button>
+                        </div>
+                      )}
+
+                      {/* BOUTON CHARGER DEVIS COMPAGNIE */}
+                      {prospect.ai_suggestion && prospect.statut !== 'converti' && (
+                        <div className="mt-4 space-y-3">
+                          <label className="w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.15em] flex items-center justify-center gap-3 transition-all border-2 cursor-pointer
+                            ${devisExtrait ? 'border-green-200 bg-green-50 text-green-600' : isExtractingDevis ? 'border-orange-200 bg-orange-50 text-orange-600' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}">
+                            {isExtractingDevis ? (
+                              <><Loader2 size={18} className="animate-spin" /> Extraction IA en cours…</>
+                            ) : devisExtrait ? (
+                              <><Check size={18} /> Devis chargé — {devisExtrait.compagnie} — {devisExtrait.primeAnnuelleTTC}€ TTC</>
+                            ) : (
+                              <><Upload size={18} /> Charger Devis Compagnie (PDF)</>
+                            )}
+                            <input
+                              type="file"
+                              accept=".pdf"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file || !prospect.id) return;
+                                setIsExtractingDevis(true);
+                                setDevisExtractionError(null);
+                                try {
+                                  const result = await extractDevisData(prospect.id, file);
+                                  setDevisExtrait(result);
+                                } catch (err: any) {
+                                  setDevisExtractionError(err.message || 'Erreur d\'extraction');
+                                } finally {
+                                  setIsExtractingDevis(false);
+                                  e.target.value = '';
+                                }
+                              }}
+                            />
+                          </label>
+                          {devisExtractionError && (
+                            <p className="text-xs text-red-500 font-medium px-2">{devisExtractionError}</p>
+                          )}
+
+                          {/* BOUTON GÉNÉRER FIC */}
+                          {devisExtrait && (
+                            <button
+                              onClick={() => setShowFicModal(true)}
+                              className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-4 transition-all shadow-xl hover:scale-[1.01]
+                                ${ficGenerated ? 'bg-green-600 text-white' : 'bg-slate-900 text-white'}`}
+                            >
+                              {ficGenerated ? (
+                                <><Check size={22} /> FIC générée</>
+                              ) : (
+                                <><FileText size={22} /> Générer FIC</>
+                              )}
+                            </button>
+                          )}
                         </div>
                       )}
                     </motion.div>
@@ -557,11 +713,12 @@ const ProspectDetail: React.FC = () => {
                          <span className="w-8 h-8 rounded-lg bg-green-50 text-[#10B981] flex items-center justify-center font-black text-xs border border-green-100 shrink-0">2</span>
                          <h3 className="text-xl md:text-2xl font-black text-slate-900">Phase 2 : Pré-contractualisation</h3>
                       </div>
-                      <p className="text-sm text-slate-400 font-bold uppercase tracking-wider">Devis & FIC • RIB</p>
+                      <p className="text-sm text-slate-400 font-bold uppercase tracking-wider">Engagement & Pièces contractuelles</p>
                     </div>
                   </div>
                   
                   <div className="space-y-4">
+                    {phase2Docs.some(d => d.type === 'signature_devis_fic') && (
                     <div className={`flex flex-col md:flex-row md:items-center justify-between p-5 rounded-3xl border transition-all gap-4 ${signatureDevisValidee ? 'bg-green-50 border-green-200' : (prospect.statut === 'devis_envoye' ? 'bg-blue-50 border-blue-100 shadow-sm' : 'bg-slate-50 border-slate-100')}`}>
                       <div className="flex items-center gap-5">
                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border-2 shrink-0 ${signatureDevisValidee ? 'bg-white border-green-200 text-[#10B981]' : 'bg-white border-blue-100 text-[#4F7CFF]'}`}>
@@ -579,6 +736,7 @@ const ProspectDetail: React.FC = () => {
                         </button>
                       </div>
                     </div>
+                    )}
 
                     {phase2Docs.some(d => d.type === 'rib_iban') && (() => {
                       const ribDoc = phase2Docs.find(d => d.type === 'rib_iban');
@@ -940,6 +1098,40 @@ const ProspectDetail: React.FC = () => {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* FICHE TARIFICATION EXTRANET */}
+      <AnimatePresence>
+        {showFicheTarification && prospect.ai_suggestion && (
+          <FicheTarification
+            prospect={prospect}
+            suggestion={prospect.ai_suggestion}
+            onClose={() => setShowFicheTarification(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* FIC — FICHE D'INFORMATION ET DE CONSEIL */}
+      <AnimatePresence>
+        {showFicModal && prospect.ai_suggestion && (
+          <FicFormModal
+            prospect={prospect}
+            suggestion={prospect.ai_suggestion}
+            devisExtrait={devisExtrait}
+            onClose={() => setShowFicModal(false)}
+            onGenerated={async (blob) => {
+              try {
+                const dossierId = prospect.id;
+                const ficType = (prospect.type_contrat_demande || 'auto').toLowerCase();
+                await uploadFicPdf(dossierId, blob, ficType, `${prospect.nom}_${prospect.prenom}`);
+                setFicGenerated(true);
+                updateProspect(prospect.id, { fiche_conseil_generee: true });
+              } catch (err) {
+                console.error('Erreur archivage FIC:', err);
+              }
+            }}
+          />
         )}
       </AnimatePresence>
     </Layout>

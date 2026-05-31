@@ -18,11 +18,51 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import { WORKFLOW_DOCUMENTS } from '../lib/preDevisDocuments';
+import { createCabinetProspect } from '../services/airtable';
 
 interface AddressSuggestion {
   label: string;
   postcode: string;
   city: string;
+}
+
+/* ── Helpers de validation & formatage ── */
+
+/** Capitalise : première lettre majuscule, reste minuscule (gère les tirets) */
+function capitalizeField(value: string): string {
+  return value
+    .split(/(-|\s)/)
+    .map(part => (/[-\s]/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()))
+    .join('');
+}
+
+/** Normalise le téléphone vers +33XXXXXXXXX */
+function formatPhoneE164(raw: string): string {
+  const digits = raw.replace(/[\s.\-()]/g, '');
+  if (digits.startsWith('+33')) return '+33' + digits.slice(3).replace(/\D/g, '');
+  if (digits.startsWith('0033')) return '+33' + digits.slice(4).replace(/\D/g, '');
+  if (digits.startsWith('0') && digits.length >= 10) return '+33' + digits.slice(1);
+  return digits.startsWith('+') ? digits : raw;
+}
+
+/** Affiche +33XXXXXXXXX sous forme lisible : +33 X XX XX XX XX */
+function displayPhone(e164: string): string {
+  if (!e164.startsWith('+33') || e164.length !== 12) return e164;
+  const n = e164.slice(3); // 9 digits
+  return `+33 ${n[0]} ${n.slice(1,3)} ${n.slice(3,5)} ${n.slice(5,7)} ${n.slice(7,9)}`;
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isValidPhone(phone: string): boolean {
+  const e164 = formatPhoneE164(phone);
+  return /^\+33\d{9}$/.test(e164);
+}
+
+function isValidName(name: string): boolean {
+  return name.trim().length >= 2 && /^[A-Za-zÀ-ÿ\s'-]+$/.test(name.trim());
 }
 
 const ProspectForm: React.FC = () => {
@@ -44,6 +84,7 @@ const ProspectForm: React.FC = () => {
     commentaires: ''
   });
 
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [scanningStatus, setScanningStatus] = useState<Record<string, 'idle' | 'scanning' | 'done'>>({});
   const [addressQuery, setAddressQuery] = useState('');
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
@@ -51,33 +92,33 @@ const ProspectForm: React.FC = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  /** Valide les champs identité et retourne les erreurs */
+  const validateIdentity = (): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!isValidName(formData.prenom)) errors.prenom = 'Prénom invalide (min. 2 caractères, lettres uniquement)';
+    if (!isValidName(formData.nom)) errors.nom = 'Nom invalide (min. 2 caractères, lettres uniquement)';
+    if (!isValidEmail(formData.email)) errors.email = 'Format email invalide';
+    if (!isValidPhone(formData.telephone)) errors.telephone = 'Format attendu : 06 12 34 56 78 ou +33612345678';
+    if (formData.adresse.trim().length < 5) errors.adresse = 'Adresse requise';
+    return errors;
+  };
+
   // Validation : Vérifie si l'étape actuelle est valide
   const isStepValid = useMemo(() => {
-    if (isExpertMode) {
-      return (
-        formData.nom.trim() !== '' &&
-        formData.prenom.trim() !== '' &&
-        formData.email.trim() !== '' &&
-        formData.telephone.trim() !== '' &&
-        formData.adresse.trim() !== ''
-      );
-    }
+    const identityOk =
+      isValidName(formData.nom) &&
+      isValidName(formData.prenom) &&
+      isValidEmail(formData.email) &&
+      isValidPhone(formData.telephone) &&
+      formData.adresse.trim().length >= 5;
+
+    if (isExpertMode) return identityOk;
 
     switch (step) {
-      case 1:
-        return (
-          formData.nom.trim() !== '' &&
-          formData.prenom.trim() !== '' &&
-          formData.email.trim() !== '' &&
-          formData.telephone.trim() !== '' &&
-          formData.adresse.trim() !== ''
-        );
-      case 2:
-        return formData.code_produit !== '';
-      case 3:
-        return true; // Les docs peuvent être optionnels au moment du clic final mais recommandés
-      default:
-        return false;
+      case 1: return identityOk;
+      case 2: return formData.code_produit !== '';
+      case 3: return true;
+      default: return false;
     }
   }, [formData, step, isExpertMode]);
 
@@ -120,6 +161,7 @@ const ProspectForm: React.FC = () => {
 
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, File>>({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const currentDocs = useMemo(() => {
     return WORKFLOW_DOCUMENTS[formData.code_produit] || WORKFLOW_DOCUMENTS['auto'];
@@ -130,9 +172,14 @@ const ProspectForm: React.FC = () => {
   }, [currentDocs]);
 
   const handleNext = () => {
+    if (step === 1) {
+      const errors = validateIdentity();
+      setFieldErrors(errors);
+      if (Object.keys(errors).length > 0) return;
+    }
     if (isStepValid) setStep(prev => Math.min(prev + 1, 3));
   };
-  const handleBack = () => setStep(prev => Math.max(prev - 1, 1));
+  const handleBack = () => { setFieldErrors({}); setStep(prev => Math.max(prev - 1, 1)); };
 
   const simulateAIScan = async (type: string) => {
     setScanningStatus(prev => ({ ...prev, [type]: 'scanning' }));
@@ -162,33 +209,59 @@ const ProspectForm: React.FC = () => {
   };
 
   const handleSubmit = async () => {
+    // Validation finale
+    const errors = validateIdentity();
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     if (!isStepValid) return;
+
     setIsAnalyzing(true);
-    const prospectId = Math.random().toString(36).substr(2, 9);
-    
-    setTimeout(() => {
+    setSubmitError(null);
+
+    // Formatage des données
+    const cleanNom = capitalizeField(formData.nom.trim());
+    const cleanPrenom = capitalizeField(formData.prenom.trim());
+    const cleanEmail = formData.email.trim().toLowerCase();
+    const cleanTel = formatPhoneE164(formData.telephone);
+
+    try {
+      const { dossier } = await createCabinetProspect({
+        nom: cleanNom,
+        prenom: cleanPrenom,
+        email: cleanEmail,
+        telephone: cleanTel,
+        adresse: formData.adresse.trim(),
+        code_produit: formData.code_produit,
+        commentaires: formData.commentaires,
+      });
+
       const newProspect = {
-        id: prospectId,
-        nom: formData.nom,
-        prenom: formData.prenom,
-        email: formData.email,
-        telephone: formData.telephone,
-        adresse: formData.adresse,
+        id: dossier.id,
+        nom: cleanNom,
+        prenom: cleanPrenom,
+        email: cleanEmail,
+        telephone: cleanTel,
+        adresse: formData.adresse.trim(),
         type_contrat_demande: formData.code_produit,
         statut: 'nouveau' as const,
         ges_score: 0,
         created_at: new Date().toISOString(),
         priority: 'Moyenne' as const
       };
-      
+
       addProspect(newProspect);
+
       Object.keys(uploadedFiles).forEach((type) => {
-        uploadDoc(prospectId, type);
+        uploadDoc(dossier.id, type);
       });
 
+      navigate(`/prospects/${dossier.id}`);
+    } catch (error) {
+      console.error('Erreur création prospect:', error);
+      setSubmitError(error instanceof Error ? error.message : 'Erreur lors de la création du prospect');
+    } finally {
       setIsAnalyzing(false);
-      navigate(`/prospects/${prospectId}`);
-    }, 1500);
+    }
   };
 
   const inputClass = "w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 outline-none focus:border-[#4F7CFF] focus:ring-4 focus:ring-[#4F7CFF]/5 transition-all placeholder:text-slate-400 text-slate-900 font-bold shadow-sm";
@@ -245,21 +318,25 @@ const ProspectForm: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className={labelClass}>Prénom <span className="text-red-500">*</span></label>
-                    <input type="text" value={formData.prenom} onChange={e => setFormData({...formData, prenom: e.target.value})} placeholder="Alice" className={inputClass} />
+                    <input type="text" value={formData.prenom} onChange={e => { setFormData({...formData, prenom: e.target.value}); setFieldErrors(prev => { const n = {...prev}; delete n.prenom; return n; }); }} onBlur={() => setFormData(prev => ({...prev, prenom: capitalizeField(prev.prenom.trim())}))} placeholder="Alice" className={`${inputClass} ${fieldErrors.prenom ? 'border-red-400 focus:border-red-500 focus:ring-red-500/10' : ''}`} />
+                    {fieldErrors.prenom && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.prenom}</p>}
                   </div>
                   <div>
                     <label className={labelClass}>Nom <span className="text-red-500">*</span></label>
-                    <input type="text" value={formData.nom} onChange={e => setFormData({...formData, nom: e.target.value})} placeholder="Lemoine" className={inputClass} />
+                    <input type="text" value={formData.nom} onChange={e => { setFormData({...formData, nom: e.target.value}); setFieldErrors(prev => { const n = {...prev}; delete n.nom; return n; }); }} onBlur={() => setFormData(prev => ({...prev, nom: capitalizeField(prev.nom.trim())}))} placeholder="Lemoine" className={`${inputClass} ${fieldErrors.nom ? 'border-red-400 focus:border-red-500 focus:ring-red-500/10' : ''}`} />
+                    {fieldErrors.nom && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.nom}</p>}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className={labelClass}>E-mail <span className="text-red-500">*</span></label>
-                    <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="contact@email.com" className={inputClass} />
+                    <input type="email" value={formData.email} onChange={e => { setFormData({...formData, email: e.target.value}); setFieldErrors(prev => { const n = {...prev}; delete n.email; return n; }); }} onBlur={() => setFormData(prev => ({...prev, email: prev.email.trim().toLowerCase()}))} placeholder="contact@email.com" className={`${inputClass} ${fieldErrors.email ? 'border-red-400 focus:border-red-500 focus:ring-red-500/10' : ''}`} />
+                    {fieldErrors.email && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.email}</p>}
                   </div>
                   <div>
-                    <label className={labelClass}>Téléphone <span className="text-red-500">*</span></label>
-                    <input type="tel" value={formData.telephone} onChange={e => setFormData({...formData, telephone: e.target.value})} placeholder="06 12 34 56 78" className={inputClass} />
+                    <label className={labelClass}>Téléphone <span className="text-red-500">*</span> <span className="text-slate-300 normal-case tracking-normal font-medium">(+33XXXXXXXXX)</span></label>
+                    <input type="tel" value={formData.telephone} onChange={e => { setFormData({...formData, telephone: e.target.value}); setFieldErrors(prev => { const n = {...prev}; delete n.telephone; return n; }); }} onBlur={() => { const formatted = formatPhoneE164(formData.telephone); setFormData(prev => ({...prev, telephone: formatted.startsWith('+33') ? displayPhone(formatted) : prev.telephone})); }} placeholder="+33 6 12 34 56 78" className={`${inputClass} ${fieldErrors.telephone ? 'border-red-400 focus:border-red-500 focus:ring-red-500/10' : ''}`} />
+                    {fieldErrors.telephone && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.telephone}</p>}
                   </div>
                 </div>
                 <div className="relative" ref={dropdownRef}>
@@ -365,6 +442,12 @@ const ProspectForm: React.FC = () => {
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {submitError && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-700 font-medium">
+                {submitError}
               </div>
             )}
 

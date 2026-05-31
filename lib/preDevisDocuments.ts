@@ -169,8 +169,8 @@ const SANTE_INDIVIDUELLE_PHASE_1: DocumentConfig[] = [
     type: 'rib_iban',
     label: 'RIB/IBAN',
     phase: 1,
-    obligatoire: true,
-    description: 'Relevé d\'Identité Bancaire',
+    obligatoire: false,
+    description: 'Optionnel — si prélèvement automatique',
   },
   {
     type: 'avis_imposition',
@@ -280,8 +280,8 @@ const SANTE_COLLECTIVE_PHASE_2: DocumentConfig[] = [
     type: 'rib_iban',
     label: 'RIB/IBAN Entreprise',
     phase: 2,
-    obligatoire: true,
-    description: 'Relevé d\'Identité Bancaire (90% GES)',
+    obligatoire: false,
+    description: 'Optionnel — si prélèvement automatique (90% GES)',
   },
   {
     type: 'bulletins_adhesion_salaries',
@@ -336,8 +336,8 @@ const PREVOYANCE_PHASE_1: DocumentConfig[] = [
     type: 'rib_iban',
     label: 'RIB/IBAN',
     phase: 1,
-    obligatoire: true,
-    description: 'Relevé d\'Identité Bancaire',
+    obligatoire: false,
+    description: 'Optionnel — si prélèvement automatique',
   },
 ];
 
@@ -395,8 +395,8 @@ const VIE_PHASE_1: DocumentConfig[] = [
     type: 'rib_iban',
     label: 'RIB/IBAN',
     phase: 1,
-    obligatoire: true,
-    description: 'Relevé d\'Identité Bancaire',
+    obligatoire: false,
+    description: 'Optionnel — si prélèvement automatique',
   },
   {
     type: 'questionnaire_patrimonial',
@@ -475,8 +475,8 @@ const EMPRUNTEUR_PHASE_1: DocumentConfig[] = [
     type: 'rib_iban',
     label: 'RIB/IBAN',
     phase: 1,
-    obligatoire: true,
-    description: 'Relevé d\'Identité Bancaire',
+    obligatoire: false,
+    description: 'Optionnel — si prélèvement automatique',
   },
 ];
 
@@ -527,8 +527,8 @@ const PHASE_2_COMMUNE: DocumentConfig[] = [
     type: 'rib_iban',
     label: 'RIB',
     phase: 2,
-    obligatoire: true,
-    description: 'Pour le prélèvement automatique',
+    obligatoire: false,
+    description: 'Optionnel — si prélèvement automatique',
   },
 ];
 

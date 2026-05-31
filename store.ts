@@ -3,6 +3,9 @@ import { create } from 'zustand';
 import { Prospect, Client, Contrat, User, AISuggestion, DocumentGED, Reclamation } from './types';
 import { mockUser, mockProspects, mockClients, mockContracts } from './mockData';
 import { WORKFLOW_DOCUMENTS } from './lib/preDevisDocuments';
+import { uploadDocumentCabinet, qualifyDocument, fetchDocumentsForDossier } from './services/documentUpload';
+import type { AirtableDocument } from './services/airtable';
+import { saveDDAPropositions, saveDDAChoixFinal } from './services/ddaService';
 
 const EMPTY_DOCS: string[] = [];
 
@@ -38,6 +41,10 @@ interface AppState {
   playNewLeadSound: () => void;
   calculateAndSetGES: (prospectId: string) => void;
   mergeProspectsFromAirtable: (incoming: Prospect[]) => void;
+  airtableDocuments: Record<string, AirtableDocument[]>;
+  loadDocumentsForDossier: (dossierId: string) => Promise<void>;
+  uploadDocReal: (dossierId: string, docType: string, label: string, file: File) => Promise<void>;
+  qualifyDocReal: (documentId: string, dossierId: string, statut: 'Valide' | 'Provisoire', dateEcheance?: string) => Promise<void>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -47,6 +54,7 @@ export const useStore = create<AppState>((set, get) => ({
   contracts: mockContracts,
   prospectDocuments: {},
   documentsGed: [],
+  airtableDocuments: {},
   isAuthenticated: true,
   lastConvertedClientId: null,
   clientNotes: {},
@@ -183,46 +191,55 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   runIAAnalysis: (prospectId) => {
+    const mockSuggestions = [
+      {
+        compagnie: 'ALLIANZ',
+        score: 96,
+        tarif_estime: 1120,
+        franchise: '380€ (Fixe)',
+        garanties: 'Tous Risques Excellence, Panne 0km, Contenu du véhicule 2000€',
+        justification: ['Meilleur rapport Qualité/Prix', 'Franchise réduite', 'Assistance Premium'],
+        appetence_technique: 94,
+        competitivite_marche: 91
+      },
+      {
+        compagnie: 'AXA',
+        score: 89,
+        tarif_estime: 1195,
+        franchise: '450€',
+        garanties: 'Tous Risques Classique, Protection Juridique',
+        justification: ['Réseau de garages agréés', 'Option Zéro Franchise bris de glace'],
+        appetence_technique: 87,
+        competitivite_marche: 85
+      },
+      {
+        compagnie: 'THELEM',
+        score: 84,
+        tarif_estime: 1040,
+        franchise: '550€',
+        garanties: 'Tiers Étendu +, Vol, Incendie',
+        justification: ['Tarif ultra-compétitif', 'Relation de proximité'],
+        appetence_technique: 82,
+        competitivite_marche: 88
+      }
+    ];
+
     set((state) => ({
       prospects: state.prospects.map(p => p.id === prospectId ? {
         ...p,
         ia_analysis_done: true,
         statut: 'en_analyse',
-        ai_suggestions: [
-          {
-            compagnie: 'ALLIANZ',
-            score: 96,
-            tarif_estime: 1120,
-            franchise: '380€ (Fixe)',
-            garanties: 'Tous Risques Excellence, Panne 0km, Contenu du véhicule 2000€',
-            justification: ['Meilleur rapport Qualité/Prix', 'Franchise réduite', 'Assistance Premium'],
-            appetence_technique: 94,
-            competitivite_marche: 91
-          },
-          {
-            compagnie: 'AXA',
-            score: 89,
-            tarif_estime: 1195,
-            franchise: '450€',
-            garanties: 'Tous Risques Classique, Protection Juridique',
-            justification: ['Réseau de garages agréés', 'Option Zéro Franchise bris de glace'],
-            appetence_technique: 87,
-            competitivite_marche: 85
-          },
-          {
-            compagnie: 'THELEM',
-            score: 84,
-            tarif_estime: 1040,
-            franchise: '550€',
-            garanties: 'Tiers Étendu +, Vol, Incendie',
-            justification: ['Tarif ultra-compétitif', 'Relation de proximité'],
-            appetence_technique: 82,
-            competitivite_marche: 88
-          }
-        ]
+        ai_suggestions: mockSuggestions,
       } : p)
     }));
     get().calculateAndSetGES(prospectId);
+
+    // Sauvegarder les 3 propositions DDA dans Airtable (conformité ACPR)
+    if (prospectId.startsWith('rec')) {
+      saveDDAPropositions(prospectId, { suggestions: mockSuggestions }).catch(
+        (err) => console.error('Erreur sauvegarde DDA:', err)
+      );
+    }
   },
 
   convertProspectToClient: (prospectId, company, premium) => {
@@ -287,4 +304,47 @@ export const useStore = create<AppState>((set, get) => ({
         ],
       };
     }),
+
+  loadDocumentsForDossier: async (dossierId) => {
+    try {
+      const docs = await fetchDocumentsForDossier(dossierId);
+      set((s) => ({
+        airtableDocuments: { ...s.airtableDocuments, [dossierId]: docs },
+      }));
+    } catch (err) {
+      console.error('Erreur chargement documents:', err);
+    }
+  },
+
+  uploadDocReal: async (dossierId, docType, label, file) => {
+    const doc = await uploadDocumentCabinet({ file, dossierId, workflowDocType: docType, label });
+    set((s) => ({
+      airtableDocuments: {
+        ...s.airtableDocuments,
+        [dossierId]: [...(s.airtableDocuments[dossierId] || []), doc],
+      },
+      prospectDocuments: {
+        ...s.prospectDocuments,
+        [dossierId]: [...(s.prospectDocuments[dossierId] || []), docType],
+      },
+    }));
+    get().calculateAndSetGES(dossierId);
+  },
+
+  qualifyDocReal: async (documentId, dossierId, statut, dateEcheance) => {
+    const updated = await qualifyDocument({
+      documentId,
+      statut,
+      conforme: statut === 'Valide',
+      dateEcheanceProvisoire: dateEcheance,
+    });
+    set((s) => ({
+      airtableDocuments: {
+        ...s.airtableDocuments,
+        [dossierId]: (s.airtableDocuments[dossierId] || []).map((d) =>
+          d.id === documentId ? updated : d
+        ),
+      },
+    }));
+  },
 }));

@@ -1,6 +1,3 @@
-// src/services/airtable.ts
-// Configuration et fonctions pour se connecter à Airtable
-
 const AIRTABLE_BEARER =
   process.env.REACT_APP_AIRTABLE_TOKEN ||
   process.env.REACT_APP_AIRTABLE_PAT ||
@@ -10,319 +7,461 @@ const AIRTABLE_BASE_ID = process.env.REACT_APP_AIRTABLE_BASE_ID || '';
 
 const AIRTABLE_API_URL = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}`;
 
-// Headers pour toutes les requêtes
 const headers = {
   'Authorization': `Bearer ${AIRTABLE_BEARER}`,
   'Content-Type': 'application/json',
 };
 
+// Rate limiter global — Airtable free = 5 req/s
+// On utilise 1 seul slot + 400ms min pour laisser de la marge aux autres
+// consommateurs (n8n, Make.com) qui partagent le même quota base.
+let pending: Promise<void> = Promise.resolve();
+
+function delay(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+export async function airtableFetch(url: string, options?: RequestInit): Promise<Response> {
+  // Sérialise toutes les requêtes : chaque appel attend la fin du précédent + 400ms
+  const slot = pending.then(() => delay(400));
+  pending = slot.catch(() => {});
+  await slot;
+
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch(url, { ...options, headers: { ...headers, ...options?.headers } });
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('Retry-After');
+      const wait = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt + 1) * 1000;
+      console.warn(`Airtable 429 — retry dans ${wait}ms (tentative ${attempt + 1}/${maxRetries})`);
+      await delay(wait);
+      continue;
+    }
+    return response;
+  }
+  // Dernière tentative sans retry
+  return fetch(url, { ...options, headers: { ...headers, ...options?.headers } });
+}
+
+/**
+ * Vide la file d'attente du rate limiter.
+ * Utile quand un batch en arrière-plan est annulé.
+ */
+export function resetRateLimiter(): void {
+  pending = Promise.resolve();
+}
+
 // ============================
-// PROSPECTS
+// TYPES — calés sur le schéma Airtable réel
 // ============================
 
-export interface AirtableProspect {
+export interface AirtableContact {
   id: string;
   fields: {
-    'Nom/Prénom': string;
-    'Email': string;
-    'Téléphone': string;
-    'SIRET/SIREN'?: string;
-    'Statut': 'Nouveau' | 'Qualifié' | 'En cours' | 'Converti' | 'Perdu';
-    'Source': 'SEO' | 'Apporteur' | 'Referral' | 'Fillout';
-    'Date de création': string;
-    'Collaborateur assigné'?: string[];
-    'GES Score'?: number;
-    'Adresse'?: string;
-    'Code Postal'?: string;
-    'Type de contrat'?: string;
-    'Analyse IA effectuée'?: boolean;
-    'Devis envoyé'?: boolean;
-    'Signature validée'?: boolean;
-    'Contrat final signé'?: boolean;
-    'Compagnie sélectionnée'?: string;
-    'Note expertise courtier'?: string;
+    Nom?: string;
+    'Prénom'?: string;
+    Nom_Complet?: string;
+    Email?: string;
+    'Téléphone'?: string;
+    Adresse?: string;
+    Type_Contact?: 'Prospect' | 'Client';
+    Statut_Contact?: 'Actif' | 'Inactif' | 'Archivé';
+    Type_Client?: 'Particulier' | 'Professionnel' | 'Entreprise';
+    Date_Naissance?: string;
+    SIRET?: string;
+    Raison_Sociale?: string;
+    'Préférence_Contact'?: string[];
+    Dossiers?: string[];
+    Date_Création?: string;
   };
 }
 
 export interface AirtableDossier {
   id: string;
   fields: {
-    Email?: string;
+    ID_Dossier?: string;
+    Contact?: string[];
+    Type_Contrat?: string;
+    Statut_Dossier?: 'Nouveau à traiter' | 'Contacté' | 'En étude' | 'En cours' | 'Suspendu' | 'Résilié';
+    Source?: 'Cabinet' | 'Alex Web Public' | 'Alex Apporteur';
+    Message_Initial?: string;
+    Notes_Courtier?: string;
+    'GES Score'?: number;
+    Phase?: string;
+    Collaborateurs_Cabinet_Client?: string[];
+    RI_Contact?: Array<{ url: string; filename?: string }>;
+    RI_Traité?: boolean;
+    RI_JSON?: string;
+    RI_Compagnie_Précédente?: string;
+    RI_Bonus_Malus?: number;
+    RI_Nb_Sinistres?: number;
+    Type_Sinistres?: string;
+    RI_Résilié?: boolean;
+    Motif_Resiliation_RI?: string;
+    IA_Statut?: string;
+    Immatriculation_Véhicule?: string;
+    Date_Permis_De_Conduire?: string;
+    Numero_Police?: string;
+    Montant_Prime_Annuelle?: number;
+    Date_Signature?: string;
+    Date_Debut_Contrat?: string;
+    Date_Fin_Contrat?: string;
+    Documents?: string[];
+    Documents_Tally?: Array<{ url: string; filename?: string }>;
+    Compagnies_et_Partenariats?: string[];
+    Date_Création?: string;
+    DDA_Proposition_1_Compagnie?: string;
+    DDA_Proposition_1_Score?: number;
+    DDA_Proposition_1_Justification?: string;
+    DDA_Proposition_1_Prime_Estimee?: number;
+    DDA_Proposition_2_Compagnie?: string;
+    DDA_Proposition_2_Score?: number;
+    DDA_Proposition_2_Justification?: string;
+    DDA_Proposition_2_Prime_Estimee?: number;
+    DDA_Proposition_3_Compagnie?: string;
+    DDA_Proposition_3_Score?: number;
+    DDA_Proposition_3_Justification?: string;
+    DDA_Proposition_3_Prime_Estimee?: number;
+    DDA_Compagnie_Retenue?: string;
+    DDA_Motif_Choix?: string;
+    DDA_Date_Analyse?: string;
     [key: string]: unknown;
   };
 }
 
-// Récupérer tous les prospects
-export async function getProspects(): Promise<AirtableProspect[]> {
-  try {
-    const response = await fetch(`${AIRTABLE_API_URL}/Prospects`, {
-      headers,
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Erreur Airtable: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data.records;
-  } catch (error) {
-    console.error('Erreur lors de la récupération des prospects:', error);
-    throw error;
-  }
+export type DocumentStatut = 'Valide' | 'Provisoire' | 'Manquant';
+
+export type DocumentType =
+  | 'Relevé Informations'
+  | 'Permis de Conduire'
+  | 'Carte Grise Barrée'
+  | 'Carte Grise Définitive'
+  | 'Pièce Identité'
+  | 'Justificatif Domicile'
+  | 'Contrat'
+  | 'Devis / Projet'
+  | 'Fiche Information Conseil'
+  | 'CPI'
+  | 'Questionnaire'
+  | 'Vérification Requise'
+  | 'Inconnu'
+  | 'Autre';
+
+export interface AirtableDocument {
+  id: string;
+  fields: {
+    Nom_Fichier?: string;
+    Type_Document?: DocumentType;
+    Statut_Document?: DocumentStatut;
+    Document_Conforme?: boolean;
+    Dossier?: string[];
+    Date_Upload?: string;
+    Dropbox_URL?: string;
+    Dropbox_Path?: string;
+    Date_Echeance_Provisoire?: string;
+    Relance_Envoyee?: boolean;
+    [key: string]: unknown;
+  };
 }
 
-export async function getDossiers(): Promise<AirtableDossier[]> {
-  try {
-    const response = await fetch(`${AIRTABLE_API_URL}/Dossiers`, {
-      headers,
-    });
+const DOC_TYPE_MAPPING: Record<string, DocumentType> = {
+  // Auto
+  permis_conduire: 'Permis de Conduire',
+  carte_grise: 'Carte Grise Définitive',
+  releve_information: 'Relevé Informations',
+  // Identité
+  carte_identite: 'Pièce Identité',
+  carte_identite_gerant: 'Pièce Identité',
+  carte_vitale: 'Autre',
+  // Domicile / Bien
+  justificatif_domicile: 'Justificatif Domicile',
+  titre_propriete_ou_bail: 'Autre',
+  descriptif_bien: 'Autre',
+  // Pro / MRP
+  kbis: 'Autre',
+  bail_ou_taxe_fonciere: 'Autre',
+  bilan_comptable: 'Autre',
+  descriptif_activite: 'Autre',
+  attestation_assurance_actuelle: 'Autre',
+  // Santé collective
+  liste_salaries: 'Autre',
+  bulletins_salaire: 'Autre',
+  effectif_insee: 'Autre',
+  due_actuel: 'Autre',
+  statistiques_sinistralite: 'Autre',
+  due_signe: 'Autre',
+  bulletins_adhesion_salaries: 'Autre',
+  // Santé individuelle
+  certificat_adhesion_precedente: 'Autre',
+  avis_imposition: 'Autre',
+  // Prévoyance
+  justificatif_revenus: 'Autre',
+  certificat_medical: 'Autre',
+  // Questionnaires (tous produits)
+  questionnaire_sante: 'Questionnaire',
+  questionnaire_medical: 'Questionnaire',
+  questionnaire_medical_simplifie: 'Questionnaire',
+  questionnaire_medical_complementaire: 'Questionnaire',
+  questionnaire_patrimonial: 'Questionnaire',
+  questionnaire_lab: 'Questionnaire',
+  // Contractuel
+  contrat_definitif: 'Contrat',
+  contrat_et_dic: 'Contrat',
+  contrat_et_cp: 'Contrat',
+  signature_devis_fic: 'Devis / Projet',
+  bulletin_souscription: 'Devis / Projet',
+  // Financier
+  rib_iban: 'Autre',
+  offre_pret: 'Autre',
+};
 
-    if (!response.ok) {
-      throw new Error(`Erreur Airtable: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.records;
-  } catch (error) {
-    console.error('Erreur lors de la récupération des dossiers:', error);
-    throw error;
-  }
+export function mapDocTypeToAirtable(workflowType: string): DocumentType {
+  return DOC_TYPE_MAPPING[workflowType] || 'Autre';
 }
 
-// Récupérer un prospect par ID
-export async function getProspectById(recordId: string): Promise<AirtableProspect> {
-  try {
-    const response = await fetch(`${AIRTABLE_API_URL}/Prospects/${recordId}`, {
-      headers,
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Erreur Airtable: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Erreur lors de la récupération du prospect:', error);
-    throw error;
-  }
+// Mapping code_produit (front) → Type_Contrat (Airtable singleSelect)
+const PRODUCT_TO_AIRTABLE: Record<string, string> = {
+  auto: 'AUT',
+  mrp: 'MRP',
+  rc_pro: 'RCPRO',
+  pro: 'MRP',
+  habitation: 'MRH',
+  sante: 'SNT',
+  sante_individuelle: 'SNT',
+  sante_collective: 'COLL',
+  prevoyance: 'Autre',
+  vie: 'Autre',
+  assurance_vie: 'Autre',
+  emprunteur: 'EMPRUNTEUR',
+  assurance_emprunteur: 'EMPRUNTEUR',
+};
+
+const AIRTABLE_TO_PRODUCT: Record<string, string> = {
+  AUT: 'auto',
+  MRP: 'mrp',
+  RCPRO: 'rc_pro',
+  MRH: 'habitation',
+  SNT: 'sante_individuelle',
+  COLL: 'sante_collective',
+  EMPRUNTEUR: 'emprunteur',
+};
+
+export function mapProductToAirtable(code: string): string {
+  return PRODUCT_TO_AIRTABLE[code.toLowerCase()] || 'Autre';
 }
 
-// Créer un nouveau prospect
-export async function createProspect(fields: AirtableProspect['fields']): Promise<AirtableProspect> {
-  try {
-    const response = await fetch(`${AIRTABLE_API_URL}/Prospects`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ fields }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Erreur Airtable: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Erreur lors de la création du prospect:', error);
-    throw error;
-  }
+export function mapAirtableToProduct(typeContrat: string): string {
+  return AIRTABLE_TO_PRODUCT[typeContrat] || typeContrat?.toLowerCase() || 'auto';
 }
 
-// Mettre à jour un prospect
-export async function updateProspect(
+// ============================
+// CONTACTS
+// ============================
+
+export async function createContact(fields: Partial<AirtableContact['fields']>): Promise<AirtableContact> {
+  const response = await airtableFetch(`${AIRTABLE_API_URL}/Contacts`, {
+    method: 'POST',
+    body: JSON.stringify({ fields }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `Erreur Airtable Contacts: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getContactById(recordId: string): Promise<AirtableContact> {
+  const response = await airtableFetch(`${AIRTABLE_API_URL}/Contacts/${recordId}`);
+  if (!response.ok) throw new Error(`Erreur Airtable: ${response.status}`);
+  return response.json();
+}
+
+// ============================
+// DOSSIERS
+// ============================
+
+export async function createDossier(fields: Partial<AirtableDossier['fields']>): Promise<AirtableDossier> {
+  const response = await airtableFetch(`${AIRTABLE_API_URL}/Dossiers`, {
+    method: 'POST',
+    body: JSON.stringify({ fields }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `Erreur Airtable Dossiers: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getDossierById(recordId: string): Promise<AirtableDossier> {
+  const response = await airtableFetch(`${AIRTABLE_API_URL}/Dossiers/${recordId}`);
+  if (!response.ok) throw new Error(`Erreur Airtable: ${response.status}`);
+  return response.json();
+}
+
+export async function updateDossier(
   recordId: string,
-  fields: Partial<AirtableProspect['fields']>
-): Promise<AirtableProspect> {
-  try {
-    const response = await fetch(`${AIRTABLE_API_URL}/Prospects/${recordId}`, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify({ fields }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Erreur Airtable: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Erreur lors de la mise à jour du prospect:', error);
-    throw error;
-  }
+  fields: Partial<AirtableDossier['fields']>
+): Promise<AirtableDossier> {
+  const response = await airtableFetch(`${AIRTABLE_API_URL}/Dossiers/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields }),
+  });
+  if (!response.ok) throw new Error(`Erreur Airtable: ${response.status}`);
+  return response.json();
+}
+
+export async function listDossiers(filterFormula?: string): Promise<AirtableDossier[]> {
+  const params = new URLSearchParams();
+  if (filterFormula) params.set('filterByFormula', filterFormula);
+  params.set('pageSize', '100');
+
+  const url = `${AIRTABLE_API_URL}/Dossiers?${params.toString()}`;
+  const response = await airtableFetch(url);
+  if (!response.ok) throw new Error(`Erreur Airtable: ${response.status}`);
+  const data = await response.json();
+  return data.records || [];
 }
 
 // ============================
 // DOCUMENTS
 // ============================
 
-export interface AirtableDocument {
-  id: string;
-  fields: {
-    'Prospect/Client lié': string[];
-    'Type de document': string;
-    'Fichier': Array<{
-      id: string;
-      url: string;
-      filename: string;
-      size: number;
-      type: string;
-    }>;
-    'Date d\'upload': string;
-    'Date d\'expiration'?: string;
-    'Validé par IA': boolean;
-    'Données extraites (OCR)'?: string;
-    'Statut': 'En attente' | 'Validé' | 'Expiré' | 'Rejeté';
-  };
+export async function getDocumentsByDossier(dossierId: string): Promise<AirtableDocument[]> {
+  const filterFormula = `FIND("${dossierId}", ARRAYJOIN({Dossier}))`;
+  const response = await airtableFetch(
+    `${AIRTABLE_API_URL}/Documents?filterByFormula=${encodeURIComponent(filterFormula)}`
+  );
+  if (!response.ok) throw new Error(`Erreur Airtable: ${response.status}`);
+  const data = await response.json();
+  return data.records || [];
 }
 
-// Récupérer les documents d'un prospect
-export async function getProspectDocuments(prospectId: string): Promise<AirtableDocument[]> {
-  try {
-    const filterFormula = `FIND("${prospectId}", {Prospect/Client lié})`;
-    const response = await fetch(
-      `${AIRTABLE_API_URL}/Documents?filterByFormula=${encodeURIComponent(filterFormula)}`,
-      { headers }
-    );
-    
-    if (!response.ok) {
-      throw new Error(`Erreur Airtable: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data.records;
-  } catch (error) {
-    console.error('Erreur lors de la récupération des documents:', error);
-    throw error;
+export async function createDocument(fields: Partial<AirtableDocument['fields']>): Promise<AirtableDocument> {
+  const response = await airtableFetch(`${AIRTABLE_API_URL}/Documents`, {
+    method: 'POST',
+    body: JSON.stringify({ fields }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `Erreur Airtable Documents: ${response.status}`);
   }
+  return response.json();
 }
 
-// Upload un document (nécessite préalablement d'avoir uploadé le fichier vers un service externe)
-export async function createDocument(
-  prospectId: string,
-  docType: string,
-  fileUrl: string,
-  fileName: string
+export async function updateDocument(
+  recordId: string,
+  fields: Partial<AirtableDocument['fields']>
 ): Promise<AirtableDocument> {
-  try {
-    const response = await fetch(`${AIRTABLE_API_URL}/Documents`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        fields: {
-          'Prospect/Client lié': [prospectId],
-          'Type de document': docType,
-          'Fichier': [{ url: fileUrl }],
-          'Date d\'upload': new Date().toISOString(),
-          'Validé par IA': false,
-          'Statut': 'En attente',
-        },
-      }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Erreur Airtable: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Erreur lors de la création du document:', error);
-    throw error;
-  }
+  const response = await airtableFetch(`${AIRTABLE_API_URL}/Documents/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields }),
+  });
+  if (!response.ok) throw new Error(`Erreur Airtable: ${response.status}`);
+  return response.json();
 }
 
 // ============================
-// ACTIVITÉS
+// FLUX COMPLET : Création prospect depuis le Cabinet
 // ============================
 
-export interface AirtableActivity {
-  id: string;
-  fields: {
-    'Prospect/Client': string[];
-    'Type d\'activité': 'Appel' | 'Email' | 'RDV' | 'Signature' | 'Relance';
-    'Date/Heure': string;
-    'Collaborateur'?: string[];
-    'Notes'?: string;
-    'Automatisée (IA)': boolean;
+export interface CabinetProspectInput {
+  nom: string;
+  prenom: string;
+  email: string;
+  telephone: string;
+  adresse: string;
+  code_produit: string;
+  commentaires?: string;
+  collaborateur_id?: string;
+}
+
+export interface CabinetProspectResult {
+  contact: AirtableContact;
+  dossier: AirtableDossier;
+}
+
+const N8N_BASE = process.env.REACT_APP_N8N_BASE_URL || '';
+const CABINET_WEBHOOK_PATH = '/webhook/creation-prospect-cabinet';
+
+export async function createCabinetProspect(input: CabinetProspectInput): Promise<CabinetProspectResult> {
+  // Route via n8n webhook — 0 appel Airtable depuis le navigateur
+  const webhookUrl = `${N8N_BASE}${CABINET_WEBHOOK_PATH}`;
+  const body = {
+    nom: input.nom,
+    prenom: input.prenom,
+    email: input.email,
+    telephone: input.telephone,
+    adresse: input.adresse,
+    type_contrat: mapProductToAirtable(input.code_produit),
+    commentaires: input.commentaires || '',
   };
-}
 
-// Créer une nouvelle activité
-export async function createActivity(
-  prospectId: string,
-  type: AirtableActivity['fields']['Type d\'activité'],
-  notes?: string,
-  automated: boolean = false
-): Promise<AirtableActivity> {
-  try {
-    const response = await fetch(`${AIRTABLE_API_URL}/Activités`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        fields: {
-          'Prospect/Client': [prospectId],
-          'Type d\'activité': type,
-          'Date/Heure': new Date().toISOString(),
-          'Notes': notes,
-          'Automatisée (IA)': automated,
-        },
-      }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Erreur Airtable: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Erreur lors de la création de l\'activité:', error);
-    throw error;
+  const res = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Erreur webhook n8n: ${res.status}`);
   }
-}
 
-// ============================
-// HELPERS
-// ============================
+  const data = await res.json();
+  if (data.status !== 'ok' || !data.dossier_id) {
+    throw new Error('Réponse webhook invalide');
+  }
 
-// Convertir un prospect Airtable vers le format de l'app
-export function mapAirtableProspectToApp(airtableProspect: AirtableProspect) {
+  // Retourne un format compatible avec l'existant
   return {
-    id: airtableProspect.id,
-    nom: airtableProspect.fields['Nom/Prénom'],
-    email: airtableProspect.fields['Email'],
-    telephone: airtableProspect.fields['Téléphone'],
-    siret: airtableProspect.fields['SIRET/SIREN'],
-    statut: mapAirtableStatusToApp(airtableProspect.fields['Statut']),
-    source: airtableProspect.fields['Source']?.toLowerCase() || 'fillout',
-    created_at: airtableProspect.fields['Date de création'],
-    adresse: airtableProspect.fields['Adresse'],
-    code_postal: airtableProspect.fields['Code Postal'],
-    type_contrat_demande: airtableProspect.fields['Type de contrat'] || 'Auto',
-    ia_analysis_done: airtableProspect.fields['Analyse IA effectuée'] || false,
-    signature_manuelle_validee: airtableProspect.fields['Signature validée'] || false,
-    contrat_definitif_signe: airtableProspect.fields['Contrat final signé'] || false,
-    contrat_definitif_envoye: airtableProspect.fields['Devis envoyé'] || false,
+    contact: { id: data.contact_id, fields: {} } as AirtableContact,
+    dossier: { id: data.dossier_id, fields: data.dossier_fields || {} } as AirtableDossier,
   };
 }
 
-// Mapper le statut Airtable vers le format app
-function mapAirtableStatusToApp(status: string): string {
-  const mapping: Record<string, string> = {
-    'Nouveau': 'nouveau',
-    'Qualifié': 'en_analyse',
+// ============================
+// MAPPERS : Airtable → App (format Prospect local)
+// ============================
+
+export function mapDossierToProspect(
+  dossier: AirtableDossier,
+  contact?: AirtableContact | null
+) {
+  const f = dossier.fields;
+  const c = contact?.fields;
+
+  const statutMap: Record<string, string> = {
+    'Nouveau à traiter': 'nouveau',
+    'Contacté': 'en_analyse',
+    'En étude': 'en_analyse',
     'En cours': 'devis_envoye',
-    'Converti': 'converti',
-    'Perdu': 'perdu',
+    'Suspendu': 'devis_envoye',
+    'Résilié': 'converti',
   };
-  return mapping[status] || 'nouveau';
+
+  return {
+    id: dossier.id,
+    nom: c?.Nom || '',
+    prenom: c?.['Prénom'] || '',
+    email: c?.Email || '',
+    telephone: c?.['Téléphone'] || '',
+    adresse: c?.Adresse || '',
+    type_contrat_demande: mapAirtableToProduct(f.Type_Contrat || ''),
+    statut: statutMap[f.Statut_Dossier || ''] || 'nouveau',
+    ges_score: f['GES Score'] || 0,
+    created_at: f.Date_Création || new Date().toISOString(),
+    source: f.Source || 'Cabinet',
+    contact_id: contact?.id,
+    priority: 'Moyenne' as const,
+  };
 }
 
-// Mapper le statut app vers Airtable
-export function mapAppStatusToAirtable(status: string): string {
+export function mapProspectStatutToAirtable(statut: string): string {
   const mapping: Record<string, string> = {
-    'nouveau': 'Nouveau',
-    'en_analyse': 'Qualifié',
-    'devis_envoye': 'En cours',
-    'converti': 'Converti',
-    'perdu': 'Perdu',
+    nouveau: 'Nouveau à traiter',
+    en_analyse: 'En étude',
+    devis_envoye: 'En cours',
+    converti: 'En cours',
   };
-  return mapping[status] || 'Nouveau';
+  return mapping[statut] || 'Nouveau à traiter';
 }

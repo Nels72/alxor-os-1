@@ -38,7 +38,7 @@ export const checkConversionThreshold = (
 
   // Vérifier si des documents provisoires sont utilisés (cas Auto)
   const config = WORKFLOW_DOCUMENTS[produit.toLowerCase()] || [];
-  const hasProvisoires = config.some(d => d.provisoire_accepte && docsUploaded.includes(d.type));
+  const hasProvisoires = config.some(d => d.peut_etre_provisoire && docsUploaded.includes(d.type));
 
   // Seuil de conversion à 90% si documents provisoires (Auto)
   if (gesScore >= 90 && hasProvisoires) {
