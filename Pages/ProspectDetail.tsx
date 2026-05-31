@@ -385,6 +385,20 @@ const ProspectDetail: React.FC = () => {
                       const isProvisoire = atDoc?.fields.Statut_Document === 'Provisoire' || (doc.peut_etre_provisoire && prospect?.documents_provisoires?.[doc.type]);
                       const provisoireEcheance = atDoc?.fields.Date_Echeance_Provisoire || prospect?.documents_provisoires?.[doc.type]?.date_echeance;
                       const showProvisoireOption = doc.peut_etre_provisoire && isUploaded;
+                      // Badge orange : échéance dépassée pour docs provisoires
+                      const isEcheanceDepassee = (() => {
+                        if (!isProvisoire) return false;
+                        const typeDoc = atDoc?.fields.Type_Document || '';
+                        let echeanceDate: Date | null = null;
+                        if (typeDoc === 'Carte Grise Barrée' && atDoc?.fields.Date_Upload) {
+                          echeanceDate = new Date(atDoc.fields.Date_Upload);
+                          echeanceDate.setDate(echeanceDate.getDate() + 30);
+                        } else if (provisoireEcheance) {
+                          echeanceDate = new Date(provisoireEcheance);
+                        }
+                        if (!echeanceDate) return false;
+                        return echeanceDate < new Date();
+                      })();
                       return (
                         <div key={doc.type} className={`flex flex-col gap-4 p-5 rounded-3xl border transition-all ${isUploaded ? (isProvisoire ? 'bg-orange-50/50 border-orange-200' : 'bg-slate-50 border-slate-100') : 'bg-white border-slate-200 shadow-sm'}`}>
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -396,6 +410,11 @@ const ProspectDetail: React.FC = () => {
                                 <p className="text-base font-bold text-slate-900">{doc.label}</p>
                                 <p className="text-[11px] text-slate-400 font-bold uppercase">{isScanningThis ? "Téléversement en cours..." : doc.description}</p>
                                 {isProvisoire && <p className="text-[10px] font-bold text-orange-600 mt-0.5">Document provisoire {provisoireEcheance ? `• Échéance : ${provisoireEcheance}` : ''}</p>}
+                                {isEcheanceDepassee && (
+                                  <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider bg-orange-500 text-white border border-orange-600 animate-pulse">
+                                    <AlertTriangle size={10} /> Échéance dépassée
+                                  </span>
+                                )}
                                 {atDoc && (
                                   <div className="mt-1">
                                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider ${atDoc.fields.Statut_Document === 'Valide' ? 'bg-green-50 text-green-600 border border-green-100' : atDoc.fields.Statut_Document === 'Provisoire' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}>
@@ -844,6 +863,13 @@ const ProspectDetail: React.FC = () => {
                         const contratEnvoye = prospect.contrat_definitif_envoye;
                         const isProvisoire = doc.peut_etre_provisoire && prospect?.documents_provisoires?.[doc.type];
                         const showProvisoireOption = doc.peut_etre_provisoire && (contratEnvoye || signatureContratValidee);
+                        // Badge orange : échéance dépassée pour docs provisoires Phase 3
+                        const isEcheanceDepasseeP3 = (() => {
+                          if (!isProvisoire) return false;
+                          const echeanceStr = prospect?.documents_provisoires?.[doc.type]?.date_echeance;
+                          if (!echeanceStr) return false;
+                          return new Date(echeanceStr) < new Date();
+                        })();
                         return (
                           <div key={doc.type} className={`flex flex-col gap-4 p-5 rounded-3xl border transition-all ${signatureContratValidee ? 'bg-green-50 border-green-200' : (contratEnvoye ? 'bg-blue-50 border-blue-100 shadow-sm' : 'bg-white border-slate-200 shadow-sm')} ${isProvisoire ? 'border-orange-300 bg-orange-50/50' : ''}`}>
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -855,6 +881,11 @@ const ProspectDetail: React.FC = () => {
                                   <p className="text-base font-bold text-slate-900">{doc.label}</p>
                                   <p className="text-[11px] text-slate-400 font-bold uppercase">{signatureContratValidee ? 'Signé' : contratEnvoye ? 'En attente de signature' : 'Charger depuis extranet compagnie'}</p>
                                   {isProvisoire && prospect.documents_provisoires?.[doc.type] && <p className="text-[10px] font-bold text-orange-600 mt-1">Provisoire • Échéance : {prospect.documents_provisoires[doc.type].date_echeance}</p>}
+                                  {isEcheanceDepasseeP3 && (
+                                    <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider bg-orange-500 text-white border border-orange-600 animate-pulse">
+                                      <AlertTriangle size={10} /> Échéance dépassée
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-2 flex-wrap">
