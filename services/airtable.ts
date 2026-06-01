@@ -64,12 +64,14 @@ export interface AirtableContact {
     Email?: string;
     'Téléphone'?: string;
     Adresse?: string;
+    Civilite?: 'M.' | 'Mme';
     Type_Contact?: 'Prospect' | 'Client';
     Statut_Contact?: 'Actif' | 'Inactif' | 'Archivé';
     Type_Client?: 'Particulier' | 'Professionnel' | 'Entreprise';
     Date_Naissance?: string;
     SIRET?: string;
     Raison_Sociale?: string;
+    Cabinet_Tenant?: string;
     'Préférence_Contact'?: string[];
     Dossiers?: string[];
     Date_Création?: string;
@@ -364,6 +366,8 @@ export async function updateDocument(
 // FLUX COMPLET : Création prospect depuis le Cabinet
 // ============================
 
+export const CABINET_TENANT = 'EAS-Y8LtQ';
+
 export interface CabinetProspectInput {
   nom: string;
   prenom: string;
@@ -373,6 +377,11 @@ export interface CabinetProspectInput {
   code_produit: string;
   commentaires?: string;
   collaborateur_id?: string;
+  civilite: 'M.' | 'Mme';
+  date_naissance: string;
+  type_client: 'Particulier' | 'Professionnel' | 'Entreprise';
+  siret?: string;
+  raison_sociale?: string;
 }
 
 export interface CabinetProspectResult {
@@ -386,7 +395,7 @@ const CABINET_WEBHOOK_PATH = '/webhook/creation-prospect-cabinet';
 export async function createCabinetProspect(input: CabinetProspectInput): Promise<CabinetProspectResult> {
   // Route via n8n webhook — 0 appel Airtable depuis le navigateur
   const webhookUrl = `${N8N_BASE}${CABINET_WEBHOOK_PATH}`;
-  const body = {
+  const body: Record<string, unknown> = {
     nom: input.nom,
     prenom: input.prenom,
     email: input.email,
@@ -394,7 +403,13 @@ export async function createCabinetProspect(input: CabinetProspectInput): Promis
     adresse: input.adresse,
     type_contrat: mapProductToAirtable(input.code_produit),
     commentaires: input.commentaires || '',
+    civilite: input.civilite,
+    date_naissance: input.date_naissance,
+    type_client: input.type_client,
+    cabinet_tenant: CABINET_TENANT,
   };
+  if (input.siret) body.siret = input.siret;
+  if (input.raison_sociale) body.raison_sociale = input.raison_sociale;
 
   const res = await fetch(webhookUrl, {
     method: 'POST',

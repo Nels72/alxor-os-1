@@ -18,12 +18,21 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import { WORKFLOW_DOCUMENTS } from '../lib/preDevisDocuments';
-import { createCabinetProspect } from '../services/airtable';
+import { createCabinetProspect, CABINET_TENANT } from '../services/airtable';
+import { Building2, User, Users } from 'lucide-react';
 
 interface AddressSuggestion {
   label: string;
   postcode: string;
   city: string;
+}
+
+interface SiretResult {
+  raison_sociale: string;
+  forme_juridique: string;
+  adresse_siege: string;
+  activite_naf: string;
+  etat: string;
 }
 
 /* ── Helpers de validation & formatage ── */
@@ -65,6 +74,19 @@ function isValidName(name: string): boolean {
   return name.trim().length >= 2 && /^[A-Za-zÀ-ÿ\s'-]+$/.test(name.trim());
 }
 
+function isValidSiret(siret: string): boolean {
+  return /^\d{14}$/.test(siret.replace(/\s/g, ''));
+}
+
+function isValidDateNaissance(date: string): boolean {
+  if (!date) return false;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return false;
+  const now = new Date();
+  const age = (now.getTime() - d.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+  return age >= 16 && age <= 120;
+}
+
 const ProspectForm: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -75,14 +97,24 @@ const ProspectForm: React.FC = () => {
   
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
+    type_client: '' as '' | 'Particulier' | 'Professionnel' | 'Entreprise',
+    civilite: '' as '' | 'M.' | 'Mme',
     nom: '',
     prenom: '',
+    date_naissance: '',
     email: '',
     telephone: '',
     adresse: '',
+    siret: '',
+    raison_sociale: '',
     code_produit: 'auto',
     commentaires: ''
   });
+
+  // SIRET lookup state
+  const [siretResult, setSiretResult] = useState<SiretResult | null>(null);
+  const [isLoadingSiret, setIsLoadingSiret] = useState(false);
+  const [siretError, setSiretError] = useState<string | null>(null);
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [scanningStatus, setScanningStatus] = useState<Record<string, 'idle' | 'scanning' | 'done'>>({});
@@ -92,25 +124,43 @@ const ProspectForm: React.FC = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const isPro = formData.type_client === 'Professionnel' || formData.type_client === 'Entreprise';
+
   /** Valide les champs identité et retourne les erreurs */
   const validateIdentity = (): Record<string, string> => {
     const errors: Record<string, string> = {};
+    if (!formData.type_client) errors.type_client = 'Type de client requis';
+    if (!formData.civilite) errors.civilite = 'Civilité requise';
     if (!isValidName(formData.prenom)) errors.prenom = 'Prénom invalide (min. 2 caractères, lettres uniquement)';
     if (!isValidName(formData.nom)) errors.nom = 'Nom invalide (min. 2 caractères, lettres uniquement)';
+    if (!isValidDateNaissance(formData.date_naissance)) errors.date_naissance = 'Date de naissance invalide (âge entre 16 et 120 ans)';
     if (!isValidEmail(formData.email)) errors.email = 'Format email invalide';
     if (!isValidPhone(formData.telephone)) errors.telephone = 'Format attendu : 06 12 34 56 78 ou +33612345678';
     if (formData.adresse.trim().length < 5) errors.adresse = 'Adresse requise';
+    if (isPro) {
+      if (!isValidSiret(formData.siret)) errors.siret = 'SIRET invalide (14 chiffres)';
+      if (!formData.raison_sociale.trim()) errors.raison_sociale = 'Raison sociale requise';
+    }
     return errors;
   };
 
   // Validation : Vérifie si l'étape actuelle est valide
   const isStepValid = useMemo(() => {
-    const identityOk =
+    const baseIdentityOk =
+      !!formData.type_client &&
+      !!formData.civilite &&
       isValidName(formData.nom) &&
       isValidName(formData.prenom) &&
+      isValidDateNaissance(formData.date_naissance) &&
       isValidEmail(formData.email) &&
       isValidPhone(formData.telephone) &&
       formData.adresse.trim().length >= 5;
+
+    const proOk = isPro
+      ? isValidSiret(formData.siret) && formData.raison_sociale.trim().length > 0
+      : true;
+
+    const identityOk = baseIdentityOk && proOk;
 
     if (isExpertMode) return identityOk;
 
@@ -120,7 +170,7 @@ const ProspectForm: React.FC = () => {
       case 3: return true;
       default: return false;
     }
-  }, [formData, step, isExpertMode]);
+  }, [formData, step, isExpertMode, isPro]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -158,6 +208,59 @@ const ProspectForm: React.FC = () => {
     const timer = setTimeout(fetchAddress, 400);
     return () => clearTimeout(timer);
   }, [addressQuery]);
+
+  // SIRET auto-lookup via API Recherche Entreprises
+  useEffect(() => {
+    const cleanSiret = formData.siret.replace(/\s/g, '');
+    if (!isPro || cleanSiret.length !== 14 || !/^\d{14}$/.test(cleanSiret)) {
+      setSiretResult(null);
+      setSiretError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const fetchSiret = async () => {
+      setIsLoadingSiret(true);
+      setSiretError(null);
+      try {
+        const res = await fetch(
+          `https://recherche-entreprises.api.gouv.fr/search?q=${cleanSiret}`,
+          { signal: controller.signal }
+        );
+        const data = await res.json();
+        const results = data.results || [];
+        if (results.length === 0) {
+          setSiretError('Aucune entreprise trouvée pour ce SIRET');
+          setSiretResult(null);
+          return;
+        }
+        const ent = results[0];
+        const siege = ent.siege || {};
+        const adresseParts = [siege.numero_voie, siege.type_voie, siege.libelle_voie, siege.code_postal, siege.libelle_commune].filter(Boolean);
+        const result: SiretResult = {
+          raison_sociale: ent.nom_complet || ent.nom_raison_sociale || '',
+          forme_juridique: ent.nature_juridique || '',
+          adresse_siege: adresseParts.join(' '),
+          activite_naf: ent.activite_principale ? `${ent.activite_principale} — ${siege.libelle_activite_principale || ''}` : '',
+          etat: ent.etat_administratif === 'A' ? 'Active' : 'Fermée',
+        };
+        setSiretResult(result);
+        // Pré-remplir raison sociale
+        if (result.raison_sociale) {
+          setFormData(prev => ({ ...prev, raison_sociale: result.raison_sociale }));
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          setSiretError('Erreur lors de la recherche SIRET');
+        }
+      } finally {
+        setIsLoadingSiret(false);
+      }
+    };
+
+    const timer = setTimeout(fetchSiret, 500);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [formData.siret, isPro]);
 
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, File>>({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -233,6 +336,11 @@ const ProspectForm: React.FC = () => {
         adresse: formData.adresse.trim(),
         code_produit: formData.code_produit,
         commentaires: formData.commentaires,
+        civilite: formData.civilite as 'M.' | 'Mme',
+        date_naissance: formData.date_naissance,
+        type_client: formData.type_client as 'Particulier' | 'Professionnel' | 'Entreprise',
+        siret: isPro ? formData.siret.replace(/\s/g, '') : undefined,
+        raison_sociale: isPro ? formData.raison_sociale.trim() : undefined,
       });
 
       const newProspect = {
@@ -242,6 +350,9 @@ const ProspectForm: React.FC = () => {
         email: cleanEmail,
         telephone: cleanTel,
         adresse: formData.adresse.trim(),
+        civilite: formData.civilite as 'M.' | 'Mme',
+        date_naissance: formData.date_naissance,
+        type_client: formData.type_client as 'Particulier' | 'Professionnel' | 'Entreprise',
         type_contrat_demande: formData.code_produit,
         statut: 'nouveau' as const,
         ges_score: 0,
@@ -315,6 +426,115 @@ const ProspectForm: React.FC = () => {
             {/* BLOC IDENTITE */}
             {(step === 1 || isExpertMode) && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+
+                {/* 1. TYPE CLIENT — premier champ */}
+                <div>
+                  <label className={labelClass}>Type de client <span className="text-red-500">*</span></label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {([
+                      { value: 'Particulier', icon: User, label: 'Particulier' },
+                      { value: 'Professionnel', icon: Building2, label: 'Professionnel' },
+                      { value: 'Entreprise', icon: Users, label: 'Entreprise' },
+                    ] as const).map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => { setFormData(prev => ({ ...prev, type_client: opt.value, ...(opt.value === 'Particulier' ? { siret: '', raison_sociale: '' } : {}) })); setSiretResult(null); setSiretError(null); setFieldErrors(prev => { const n = { ...prev }; delete n.type_client; return n; }); }}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all font-bold text-xs uppercase tracking-widest ${
+                          formData.type_client === opt.value
+                            ? 'border-[#4F7CFF] bg-[#4F7CFF]/5 text-[#4F7CFF] shadow-lg shadow-blue-500/10'
+                            : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300'
+                        }`}
+                      >
+                        <opt.icon size={22} />
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {fieldErrors.type_client && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.type_client}</p>}
+                </div>
+
+                {/* 2. BLOC SIRET — visible si Pro/Entreprise */}
+                {isPro && (
+                  <div className="space-y-4 p-6 bg-blue-50/50 border border-blue-100 rounded-2xl">
+                    <div>
+                      <label className={labelClass}>SIRET <span className="text-red-500">*</span> <span className="text-slate-300 normal-case tracking-normal font-medium">(14 chiffres)</span></label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={formData.siret}
+                          onChange={e => { setFormData({ ...formData, siret: e.target.value }); setFieldErrors(prev => { const n = { ...prev }; delete n.siret; return n; }); }}
+                          placeholder="12345678901234"
+                          maxLength={14}
+                          className={`${inputClass} pr-12 ${fieldErrors.siret ? 'border-red-400 focus:border-red-500 focus:ring-red-500/10' : ''}`}
+                        />
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                          {isLoadingSiret && <Loader2 size={18} className="animate-spin text-[#4F7CFF]" />}
+                          {siretResult && !isLoadingSiret && <CheckCircle2 size={18} className="text-green-500" />}
+                        </div>
+                      </div>
+                      {fieldErrors.siret && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.siret}</p>}
+                      {siretError && <p className="text-[10px] text-orange-500 font-bold mt-1.5 ml-1">{siretError}</p>}
+                    </div>
+
+                    {/* Résultat lookup SIRET */}
+                    {siretResult && (
+                      <div className="space-y-3 animate-in fade-in duration-300">
+                        <div className="flex items-center gap-2 text-[10px] font-black text-green-600 uppercase tracking-widest">
+                          <CheckCircle2 size={12} /> Entreprise trouvée
+                          {siretResult.etat !== 'Active' && <span className="text-red-500 ml-2">({siretResult.etat})</span>}
+                        </div>
+                        <div>
+                          <label className={labelClass}>Raison sociale <span className="text-red-500">*</span></label>
+                          <input type="text" value={formData.raison_sociale} onChange={e => { setFormData({ ...formData, raison_sociale: e.target.value }); setFieldErrors(prev => { const n = { ...prev }; delete n.raison_sociale; return n; }); }} className={`${inputClass} ${fieldErrors.raison_sociale ? 'border-red-400' : ''}`} />
+                          {fieldErrors.raison_sociale && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.raison_sociale}</p>}
+                        </div>
+                        {siretResult.forme_juridique && (
+                          <div className="grid grid-cols-2 gap-4 text-xs text-slate-500">
+                            <div><span className="font-bold text-slate-700">Forme :</span> {siretResult.forme_juridique}</div>
+                            <div><span className="font-bold text-slate-700">NAF :</span> {siretResult.activite_naf}</div>
+                          </div>
+                        )}
+                        {siretResult.adresse_siege && (
+                          <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">Siège :</span> {siretResult.adresse_siege}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Raison sociale manuelle si pas de résultat SIRET */}
+                    {!siretResult && isValidSiret(formData.siret) && !isLoadingSiret && (
+                      <div>
+                        <label className={labelClass}>Raison sociale <span className="text-red-500">*</span></label>
+                        <input type="text" value={formData.raison_sociale} onChange={e => { setFormData({ ...formData, raison_sociale: e.target.value }); setFieldErrors(prev => { const n = { ...prev }; delete n.raison_sociale; return n; }); }} placeholder="Nom de l'entreprise" className={`${inputClass} ${fieldErrors.raison_sociale ? 'border-red-400' : ''}`} />
+                        {fieldErrors.raison_sociale && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.raison_sociale}</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. CIVILITÉ */}
+                <div>
+                  <label className={labelClass}>Civilité <span className="text-red-500">*</span></label>
+                  <div className="grid grid-cols-2 gap-3 max-w-xs">
+                    {(['M.', 'Mme'] as const).map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => { setFormData(prev => ({ ...prev, civilite: c })); setFieldErrors(prev => { const n = { ...prev }; delete n.civilite; return n; }); }}
+                        className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${
+                          formData.civilite === c
+                            ? 'border-[#4F7CFF] bg-[#4F7CFF]/5 text-[#4F7CFF]'
+                            : 'border-slate-200 text-slate-400 hover:border-slate-300'
+                        }`}
+                      >
+                        {c === 'M.' ? 'Monsieur' : 'Madame'}
+                      </button>
+                    ))}
+                  </div>
+                  {fieldErrors.civilite && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.civilite}</p>}
+                </div>
+
+                {/* 4. NOM / PRÉNOM */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className={labelClass}>Prénom <span className="text-red-500">*</span></label>
@@ -327,6 +547,15 @@ const ProspectForm: React.FC = () => {
                     {fieldErrors.nom && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.nom}</p>}
                   </div>
                 </div>
+
+                {/* 5. DATE DE NAISSANCE */}
+                <div className="max-w-xs">
+                  <label className={labelClass}>Date de naissance <span className="text-red-500">*</span></label>
+                  <input type="date" value={formData.date_naissance} onChange={e => { setFormData({...formData, date_naissance: e.target.value}); setFieldErrors(prev => { const n = {...prev}; delete n.date_naissance; return n; }); }} className={`${inputClass} ${fieldErrors.date_naissance ? 'border-red-400 focus:border-red-500 focus:ring-red-500/10' : ''}`} />
+                  {fieldErrors.date_naissance && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.date_naissance}</p>}
+                </div>
+
+                {/* 6. EMAIL / TÉLÉPHONE */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className={labelClass}>E-mail <span className="text-red-500">*</span></label>
@@ -339,19 +568,21 @@ const ProspectForm: React.FC = () => {
                     {fieldErrors.telephone && <p className="text-[10px] text-red-500 font-bold mt-1.5 ml-1">{fieldErrors.telephone}</p>}
                   </div>
                 </div>
+
+                {/* 7. ADRESSE DU RISQUE */}
                 <div className="relative" ref={dropdownRef}>
                   <label className={labelClass}>Adresse du risque <span className="text-red-500">*</span></label>
                   <div className="relative">
-                    <input 
-                      type="text" 
-                      value={formData.adresse} 
+                    <input
+                      type="text"
+                      value={formData.adresse}
                       onChange={e => {
                         setFormData({...formData, adresse: e.target.value});
                         setAddressQuery(e.target.value);
-                      }} 
+                      }}
                       onFocus={() => setShowSuggestions(true)}
-                      placeholder="Saisissez l'adresse..." 
-                      className={`${inputClass} pr-12`} 
+                      placeholder="Saisissez l'adresse..."
+                      className={`${inputClass} pr-12`}
                     />
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
                       {isLoadingAddress && <Loader2 size={18} className="animate-spin text-slate-400" />}

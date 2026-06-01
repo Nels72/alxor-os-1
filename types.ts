@@ -117,6 +117,11 @@ export interface Prospect {
   email: string;
   telephone: string;
   adresse?: string;
+  civilite?: 'M.' | 'Mme';
+  date_naissance?: string;
+  type_client?: 'Particulier' | 'Professionnel' | 'Entreprise';
+  siret?: string;
+  raison_sociale?: string;
   type_contrat_demande: string;
   statut: 'nouveau' | 'en_analyse' | 'devis_envoye' | 'converti';
   ges_score: number;
