@@ -19,6 +19,7 @@ import { saveDDAChoixFinal } from '../services/ddaService';
 import FicheTarification from '../components/FicheTarification';
 import FicFormModal from '../components/FicFormModal';
 import { extractDevisData, type DevisExtrait } from '../services/devisExtraction';
+import { extractRIData, type RIExtrait } from '../services/extractionRI';
 import { uploadFicPdf } from '../services/documentUpload';
 
 const EMPTY_AT_DOCS: AirtableDocument[] = [];
@@ -116,6 +117,9 @@ const ProspectDetail: React.FC = () => {
   const [isExtractingDevis, setIsExtractingDevis] = useState(false);
   const [devisExtractionError, setDevisExtractionError] = useState<string | null>(null);
   const [ficGenerated, setFicGenerated] = useState(false);
+  const [riExtrait, setRiExtrait] = useState<RIExtrait | null>(null);
+  const [isExtractingRI, setIsExtractingRI] = useState(false);
+  const [riExtractionError, setRiExtractionError] = useState<string | null>(null);
   const [editingArbitrageFor, setEditingArbitrageFor] = useState<string | null>(null);
   const [draftNoteExpertise, setDraftNoteExpertise] = useState('');
   const [editingProvisoireFor, setEditingProvisoireFor] = useState<string | null>(null);
@@ -501,13 +505,93 @@ const ProspectDetail: React.FC = () => {
                     })}
                   </div>
 
+                  {/* Extraction RI — uniquement pour produits auto/moto/flotte */}
+                  {/auto|véhicule|vehicule|automobile|flotte|moto/i.test(productKey) && (
+                    <div className="mt-6 p-5 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/30">
+                      <div className="flex items-center gap-4 mb-3">
+                        <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                          <Search size={20} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-black text-slate-900">Extraction Relevé d'Information</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">IA Gemini • Données auto-remplies dans la Fiche Tarification</p>
+                        </div>
+                        {riExtrait && (
+                          <span className="ml-auto flex items-center gap-1 px-3 py-1 rounded-lg bg-green-100 text-green-700 text-[10px] font-black uppercase">
+                            <CheckCircle size={12} /> RI Extrait
+                          </span>
+                        )}
+                      </div>
+                      {riExtractionError && (
+                        <p className="text-xs text-red-500 font-bold mb-3">{riExtractionError}</p>
+                      )}
+                      {riExtrait ? (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                          <div className="bg-white rounded-lg p-2 border border-slate-100">
+                            <span className="text-[9px] text-slate-400 font-black uppercase block">Bonus/Malus</span>
+                            <span className={`font-bold ${(riExtrait.bonus_malus || 0) > 1 ? 'text-orange-600' : 'text-green-600'}`}>{riExtrait.bonus_malus}</span>
+                          </div>
+                          <div className="bg-white rounded-lg p-2 border border-slate-100">
+                            <span className="text-[9px] text-slate-400 font-black uppercase block">Compagnie</span>
+                            <span className="font-bold text-slate-900">{riExtrait.compagnie_precedente || '—'}</span>
+                          </div>
+                          <div className="bg-white rounded-lg p-2 border border-slate-100">
+                            <span className="text-[9px] text-slate-400 font-black uppercase block">Sinistres 36m</span>
+                            <span className={`font-bold ${(riExtrait.nb_sinistres_36m || 0) > 0 ? 'text-orange-600' : 'text-green-600'}`}>{riExtrait.nb_sinistres_36m}</span>
+                          </div>
+                          <div className="bg-white rounded-lg p-2 border border-slate-100">
+                            <span className="text-[9px] text-slate-400 font-black uppercase block">Résilié</span>
+                            <span className={`font-bold ${riExtrait.resilie ? 'text-red-600' : 'text-green-600'}`}>{riExtrait.resilie ? 'OUI' : 'NON'}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <label className={`flex items-center justify-center gap-3 py-4 rounded-xl border-2 cursor-pointer transition-all
+                          ${isExtractingRI ? 'border-indigo-300 bg-indigo-100 text-indigo-600' : 'border-indigo-200 bg-white text-indigo-600 hover:bg-indigo-50'}`}>
+                          {isExtractingRI ? (
+                            <><Loader2 size={18} className="animate-spin" /> Extraction IA en cours...</>
+                          ) : (
+                            <><Upload size={18} /> Charger le RI (PDF)</>
+                          )}
+                          <input
+                            type="file"
+                            accept=".pdf"
+                            className="hidden"
+                            disabled={isExtractingRI}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              setIsExtractingRI(true);
+                              setRiExtractionError(null);
+                              try {
+                                const result = await extractRIData(prospect.id, file);
+                                setRiExtrait(result);
+                                // Mise à jour locale du prospect avec les champs Airtable extraits
+                                updateProspect(prospect.id, {
+                                  airtable_dossier_fields: {
+                                    ...(prospect.airtable_dossier_fields || {}),
+                                    ...result.airtableFields,
+                                  },
+                                });
+                              } catch (err) {
+                                setRiExtractionError(err instanceof Error ? err.message : 'Erreur extraction RI');
+                              } finally {
+                                setIsExtractingRI(false);
+                                e.target.value = '';
+                              }
+                            }}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  )}
+
                   <div className="mt-10 pt-8 border-t border-slate-100">
-                    <button 
-                      onClick={() => runIAAnalysis(prospect.id)} 
-                      disabled={!phase1Complete || prospect.ia_analysis_done} 
+                    <button
+                      onClick={() => runIAAnalysis(prospect.id)}
+                      disabled={!phase1Complete || prospect.ia_analysis_done}
                       className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-4 transition-all ${
-                        prospect.ia_analysis_done 
-                          ? 'bg-[#10B981] text-white cursor-default shadow-lg' 
+                        prospect.ia_analysis_done
+                          ? 'bg-[#10B981] text-white cursor-default shadow-lg'
                           : phase1Complete ? 'bg-[#4F7CFF] text-white hover:scale-[1.01] shadow-xl shadow-blue-500/25' : 'bg-slate-50 text-slate-300 cursor-not-allowed'
                       }`}
                     >
