@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useStore } from '../store';
+import { getProductLabel } from '../lib/productCatalog';
 import { PriorityLevel, Client, Contrat, Amendment } from '../types';
 import {
   listDossierRecords,
@@ -242,7 +243,14 @@ const Dashboard: React.FC = () => {
         }
       } catch (err) {
         if (!abortCtrl.signal.aborted) {
-          setAirtableError('Erreur lors du chargement Airtable. Vérifiez votre token et base ID.');
+          const detail = err instanceof Error ? err.message : String(err);
+          const tokenMissing = !process.env.REACT_APP_AIRTABLE_TOKEN && !process.env.REACT_APP_AIRTABLE_PAT && !process.env.REACT_APP_AIRTABLE_API_KEY;
+          console.error('[Airtable] Échec chargement Dossiers:', err);
+          setAirtableError(
+            tokenMissing
+              ? 'Token Airtable absent au runtime. Redémarrez le serveur Vite (npm run dev) après modification du .env.'
+              : `Erreur lors du chargement Airtable (${detail}). Vérifiez token/base ID puis redémarrez Vite.`
+          );
           setAirtableLoading(false);
         }
       }
@@ -477,7 +485,7 @@ const Dashboard: React.FC = () => {
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-2">
                       <Target size={14} className="text-[#4F7CFF]" />
-                      <span className="text-xs font-medium text-slate-700">{p.type_contrat_demande}</span>
+                      <span className="text-xs font-medium text-slate-700">{getProductLabel(p.type_contrat_demande)}</span>
                     </div>
                     {p.ia_analysis_done && p.ai_suggestions && (
                       <div className="flex gap-1">

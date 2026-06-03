@@ -110,6 +110,8 @@ export interface AISuggestion {
   note_expertise_courtier?: string;
 }
 
+import type { ProspectProductData } from './lib/prospectProductData';
+
 export interface Prospect {
   id: string;
   nom: string;
@@ -148,6 +150,8 @@ export interface Prospect {
   >;
   /** Champs bruts du record Dossiers (courtier, statuts, etc.) */
   airtable_dossier_fields?: Record<string, unknown>;
+  /** Données tarifantes structurées par famille produit (Auto/Moto, ...) */
+  product_data?: ProspectProductData;
 }
 
 export interface Document {

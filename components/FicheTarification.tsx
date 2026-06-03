@@ -6,6 +6,18 @@ import {
   Phone, Mail, Printer
 } from 'lucide-react';
 import type { Prospect, AISuggestion } from '../types';
+import { calcAge, calcAnciennetePermis, isVehiculeProduct, type AutoProductData } from '../lib/prospectProductData';
+import { COMPAGNIES_VEHICULE } from '../lib/compagnieRules';
+
+/** Formate une ancienneté en mois → "X ans Y mois" */
+function formatAnciennete(mois: number | null | undefined): string | undefined {
+  if (mois === null || mois === undefined) return undefined;
+  const ans = Math.floor(mois / 12);
+  const reste = mois % 12;
+  if (ans === 0) return `${reste} mois`;
+  if (reste === 0) return `${ans} an${ans > 1 ? 's' : ''}`;
+  return `${ans} an${ans > 1 ? 's' : ''} ${reste} mois`;
+}
 
 interface FicheTarificationProps {
   prospect: Prospect;
@@ -54,29 +66,99 @@ const FicheTarification: React.FC<FicheTarificationProps> = ({ prospect, suggest
 
   const dossierFields = prospect.airtable_dossier_fields || {};
   const typeContrat = (prospect.type_contrat_demande || 'auto').toLowerCase();
-  const isAuto = /auto|véhicule|vehicule|automobile|flotte|moto/i.test(typeContrat);
-  const isPro = /mrp|rc_pro|pro|multirisque/i.test(typeContrat);
+  const isAuto = isVehiculeProduct(prospect.type_contrat_demande || 'auto')
+    || /auto|véhicule|vehicule|automobile|flotte|moto/i.test(typeContrat);
+
+  // Données tarifantes structurées (préférées) avec fallback champs Airtable bruts
+  const pd: Partial<AutoProductData> =
+    prospect.product_data?.type === 'vehicule' ? prospect.product_data : {};
+
+  const ageConducteur = calcAge(prospect.date_naissance);
+  const anciennetePermisMois =
+    pd.anciennete_permis_mois ?? calcAnciennetePermis((pd.date_permis as string) ?? (dossierFields.Date_Permis_De_Conduire as string));
+
+  const bonusMalus = pd.bonus_malus ?? (dossierFields.RI_Bonus_Malus as number | undefined);
+  const nbSinistres = pd.nb_sinistres_36m ?? (dossierFields.RI_Nb_Sinistres as number | undefined);
+  const resilie = pd.resilie ?? (dossierFields['RI_Résilié'] as boolean | undefined);
 
   const souscripteur: BlockData[] = [
     { label: 'Nom', value: prospect.nom },
     { label: 'Prénom', value: prospect.prenom },
+    { label: 'Date de Naissance', value: prospect.date_naissance },
+    { label: 'Âge', value: ageConducteur !== null ? `${ageConducteur} ans` : undefined },
     { label: 'Email', value: prospect.email },
     { label: 'Téléphone', value: prospect.telephone },
     { label: 'Adresse', value: prospect.adresse },
   ];
 
+  // Helpers de formatage (sinistres + dates)
+  const prettyNature = (n?: string | null): string => {
+    if (!n) return '—';
+    const map: Record<string, string> = {
+      responsable: 'Responsable',
+      non_responsable: 'Non responsable',
+      partielle: 'Responsabilité partagée',
+    };
+    return map[n.toLowerCase()] || n;
+  };
+  const prettyType = (t?: string | null): string => {
+    if (!t) return '—';
+    const map: Record<string, string> = {
+      corporel: 'Corporel',
+      materiel: 'Matériel',
+      bris_de_glace: 'Bris de glace',
+      vol: 'Vol',
+      autre: 'Autre',
+    };
+    return map[t.toLowerCase()] || t;
+  };
+  const fmtSinistreDate = (d?: string | null): string => {
+    if (!d) return '—';
+    const m = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : d;
+  };
+
   const vehicule: BlockData[] = isAuto ? [
-    { label: 'Immatriculation', value: dossierFields.Immatriculation_Véhicule as string },
-    { label: 'Date Permis', value: dossierFields.Date_Permis_De_Conduire as string },
+    { label: 'Immatriculation', value: (pd.immatriculation as string) ?? (dossierFields.Immatriculation_Véhicule as string) },
+    { label: 'Marque', value: pd.vehicule_marque as string },
+    { label: 'Modèle', value: pd.vehicule_modele as string },
+    { label: 'Usage', value: pd.vehicule_usage as string },
+    { label: 'Énergie', value: pd.vehicule_energie as string },
+    { label: 'Date Permis', value: (pd.date_permis as string) ?? (dossierFields.Date_Permis_De_Conduire as string) },
+    { label: 'Ancienneté Permis', value: formatAnciennete(anciennetePermisMois) },
   ] : [];
 
   const antecedents: BlockData[] = isAuto ? [
-    { label: 'Compagnie Précédente', value: dossierFields.RI_Compagnie_Précédente as string },
-    { label: 'Bonus/Malus', value: dossierFields.RI_Bonus_Malus as number, highlight: (dossierFields.RI_Bonus_Malus as number) > 1 },
-    { label: 'Nb Sinistres', value: dossierFields.RI_Nb_Sinistres as number, highlight: (dossierFields.RI_Nb_Sinistres as number) > 0 },
-    { label: 'Type Sinistres', value: dossierFields.Type_Sinistres as string },
-    { label: 'Résilié', value: (dossierFields['RI_Résilié'] as boolean) ? 'OUI' : 'NON', highlight: dossierFields['RI_Résilié'] as boolean },
-    { label: 'Motif Résiliation', value: dossierFields.Motif_Resiliation_RI as string },
+    { label: 'Compagnie Précédente', value: (pd.compagnie_precedente as string) ?? (dossierFields.RI_Compagnie_Précédente as string) },
+    { label: "Date d'effet", value: ((pd.date_effet_contrat as string) ?? (dossierFields.Date_Effet_Contrat_RI as string)) ? fmtSinistreDate((pd.date_effet_contrat as string) ?? (dossierFields.Date_Effet_Contrat_RI as string)) : undefined },
+    { label: "Date d'échéance", value: pd.bm_date_echeance ? fmtSinistreDate(pd.bm_date_echeance as string) : undefined },
+    { label: "Mois d'assurance", value: pd.nb_mois != null ? formatAnciennete(pd.nb_mois) : undefined },
+    { label: 'Bonus/Malus', value: bonusMalus, highlight: (bonusMalus ?? 0) > 1 },
+    { label: 'Nb Sinistres 36m', value: nbSinistres, highlight: (nbSinistres ?? 0) > 0 },
+    { label: 'Coefficient Nb Mois', value: (pd.bm_nb_annees_050 as number) ?? (dossierFields.bm_nb_annees_050 as number) },
+    { label: 'Résilié', value: resilie ? 'OUI' : 'NON', highlight: !!resilie },
+    { label: 'Motif Résiliation', value: (pd.motif_resiliation as string) ?? (dossierFields.Motif_Resiliation_RI as string) },
+  ] : [];
+
+  // Sinistres détaillés (nature + responsabilité)
+  const sinistres = (isAuto && Array.isArray(pd.sinistres)) ? pd.sinistres : [];
+
+  const formule: BlockData[] = isAuto ? [
+    { label: 'Formule Souhaitée', value: pd.formule_souhaitee, highlight: true },
+    ...(pd.conducteur_secondaire
+      ? [
+          { label: 'Conducteur Secondaire', value: 'Oui' },
+          ...(pd.nom_conducteur_secondaire || pd.prenom_conducteur_secondaire
+            ? [{ label: 'CDR Sec. — Nom/Prénom', value: `${pd.prenom_conducteur_secondaire || ''} ${pd.nom_conducteur_secondaire || ''}`.trim() }]
+            : []),
+          ...(pd.date_naissance_conducteur_secondaire
+            ? [{ label: 'CDR Sec. — Naissance', value: fmtSinistreDate(pd.date_naissance_conducteur_secondaire) }]
+            : []),
+          ...(pd.date_permis_conducteur_secondaire
+            ? [{ label: 'CDR Sec. — Date permis', value: fmtSinistreDate(pd.date_permis_conducteur_secondaire) }]
+            : []),
+        ]
+      : []),
   ] : [];
 
   const offreSelectionnee: BlockData[] = [
@@ -99,9 +181,15 @@ const FicheTarification: React.FC<FicheTarificationProps> = ({ prospect, suggest
       lines.push('', '--- VÉHICULE / PERMIS ---', ...vehicule.map(b => `${b.label}: ${b.value || '—'}`));
     }
     if (antecedents.length > 0) {
-      lines.push('', '--- ANTÉCÉDENTS ---', ...antecedents.map(b => `${b.label}: ${b.value || '—'}`));
+      lines.push('', '--- ANTÉCÉDENTS ---', ...antecedents.map(b => `${b.label}: ${b.value ?? '—'}`));
     }
-    lines.push('', '--- OFFRE SÉLECTIONNÉE ---', ...offreSelectionnee.map(b => `${b.label}: ${b.value || '—'}`));
+    if (sinistres.length > 0) {
+      lines.push('', '--- DÉTAIL SINISTRES ---', ...sinistres.map(s => `${fmtSinistreDate(s.date)} · ${prettyNature(s.nature)} · ${prettyType(s.type)}`));
+    }
+    if (formule.length > 0) {
+      lines.push('', '--- FORMULE SOUHAITÉE ---', ...formule.map(b => `${b.label}: ${b.value ?? '—'}`));
+    }
+    lines.push('', '--- OFFRE SÉLECTIONNÉE ---', ...offreSelectionnee.map(b => `${b.label}: ${b.value ?? '—'}`));
     navigator.clipboard.writeText(lines.join('\n'));
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 2000);
@@ -132,7 +220,9 @@ const FicheTarification: React.FC<FicheTarificationProps> = ({ prospect, suggest
       <h2>Souscripteur</h2>
       ${souscripteur.map(b => `<div class="row"><span class="label">${b.label}</span><span class="value">${b.value || '—'}</span></div>`).join('')}
       ${vehicule.length > 0 ? `<h2>Véhicule / Permis</h2>${vehicule.map(b => `<div class="row"><span class="label">${b.label}</span><span class="value">${b.value || '—'}</span></div>`).join('')}` : ''}
-      ${antecedents.length > 0 ? `<h2>Antécédents Assurance</h2>${antecedents.map(b => `<div class="row"><span class="label">${b.label}</span><span class="value ${b.highlight ? 'highlight' : ''}">${b.value || '—'}</span></div>`).join('')}` : ''}
+      ${antecedents.length > 0 ? `<h2>Antécédents Assurance</h2>${antecedents.map(b => `<div class="row"><span class="label">${b.label}</span><span class="value ${b.highlight ? 'highlight' : ''}">${b.value ?? '—'}</span></div>`).join('')}` : ''}
+      ${sinistres.length > 0 ? `<h2>Détail Sinistres</h2>${sinistres.map(s => `<div class="row"><span class="label">${fmtSinistreDate(s.date)}</span><span class="value">${prettyNature(s.nature)} — ${prettyType(s.type)}</span></div>`).join('')}` : ''}
+      ${formule.length > 0 ? `<h2>Formule Souhaitée</h2>${formule.map(b => `<div class="row"><span class="label">${b.label}</span><span class="value">${b.value ?? '—'}</span></div>`).join('')}` : ''}
       <h2>Offre Sélectionnée</h2>
       ${offreSelectionnee.map(b => `<div class="row"><span class="label">${b.label}</span><span class="value">${b.value || '—'}</span></div>`).join('')}
       <div class="footer">Alxor OS — Fiche tarification générée le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</div>
@@ -142,11 +232,13 @@ const FicheTarification: React.FC<FicheTarificationProps> = ({ prospect, suggest
     w.print();
   };
 
-  const defaultExtranets = extranets || [
-    { nom: 'ALLIANZ', url: 'https://www.allianz.fr/espace-pro' },
-    { nom: 'AXA', url: 'https://www.axa.fr/pro/espace-courtier' },
-    { nom: 'THELEM', url: 'https://www.thelem-assurances.fr/espace-courtier' },
-  ];
+  // Liens extranet : ceux fournis par le parent (compagnies éligibles du matching),
+  // sinon dérivés dynamiquement de la base de connaissance véhicule.
+  const defaultExtranets = extranets || (
+    isAuto
+      ? COMPAGNIES_VEHICULE.map(c => ({ nom: c.compagnie, url: c.extranet_url }))
+      : []
+  );
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -211,7 +303,7 @@ const FicheTarification: React.FC<FicheTarificationProps> = ({ prospect, suggest
             <div className="bg-white border border-slate-200 rounded-2xl p-5">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><Car size={14} className="text-blue-500" /> Véhicule / Permis</h4>
               <div className="space-y-1">
-                {vehicule.map(b => <InfoRow key={b.label} label={b.label} value={b.value} highlight={!b.value} />)}
+                {vehicule.map(b => <InfoRow key={b.label} label={b.label} value={b.value} />)}
               </div>
             </div>
           )}
@@ -222,6 +314,43 @@ const FicheTarification: React.FC<FicheTarificationProps> = ({ prospect, suggest
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><AlertTriangle size={14} className="text-orange-500" /> Antécédents Assurance</h4>
               <div className="space-y-1">
                 {antecedents.map(b => <InfoRow key={b.label} label={b.label} value={b.value} highlight={b.highlight} />)}
+              </div>
+
+              {/* Détail des sinistres : nature + responsabilité */}
+              {sinistres.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Détail des sinistres</p>
+                  <div className="overflow-hidden rounded-xl border border-slate-100">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-wider">
+                          <th className="px-3 py-2">Date</th>
+                          <th className="px-3 py-2">Responsabilité</th>
+                          <th className="px-3 py-2">Nature</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sinistres.map((s, i) => (
+                          <tr key={i} className="border-t border-slate-100 text-xs">
+                            <td className="px-3 py-2 font-bold text-slate-700">{fmtSinistreDate(s.date)}</td>
+                            <td className={`px-3 py-2 font-bold ${(s.nature || '').toLowerCase() === 'responsable' ? 'text-red-600' : (s.nature || '').toLowerCase() === 'partielle' ? 'text-orange-600' : 'text-slate-700'}`}>{prettyNature(s.nature)}</td>
+                            <td className="px-3 py-2 font-medium text-slate-600">{prettyType(s.type)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Bloc Formule souhaitée (auto uniquement) */}
+          {formule.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-5">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><ShieldCheck size={14} className="text-blue-500" /> Formule Souhaitée</h4>
+              <div className="space-y-1">
+                {formule.map(b => <InfoRow key={b.label} label={b.label} value={b.value} highlight={b.highlight} />)}
               </div>
             </div>
           )}

@@ -14,8 +14,14 @@ export interface RIExtrait {
   date_releve: string | null;
   date_effet_contrat: string | null;
   date_fin_contrat: string | null;
+  /** Nombre de mois d'assurance cumulés depuis la date d'effet */
+  nb_mois?: number | null;
+  /** Date de dernière échéance du RI (bonus_malus.date_echeance) */
+  bm_date_echeance?: string | null;
+  date_echeance?: string | null;
   vehicule_marque: string | null;
   vehicule_modele: string | null;
+  vehicule_categorie: string | null;   // Énergie / catégorie (C.9)
   immatriculation: string | null;
   usage_vehicule: string | null;
   conducteur_principal: string | null;
@@ -23,6 +29,13 @@ export interface RIExtrait {
   date_permis: string | null;
   annees_bonus_050: number | null;
   formule_actuelle: string | null;
+  /** Sinistres détaillés (rubrique F du RI) */
+  sinistres?: Array<{
+    date: string | null;
+    nature: string | null;        // responsable / non_responsable / partielle
+    type: string | null;          // corporel / materiel / bris_de_glace / vol / autre
+    conducteur_nom: string | null;
+  }>;
   // Champs Airtable mappés (pour mise à jour locale)
   airtableFields: Record<string, unknown>;
   dossierId: string;
@@ -67,9 +80,23 @@ export async function extractRIData(
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(`Extraction RI échouée (${response.status}): ${text}`);
+    throw new Error(`Extraction RI échouée (${response.status}): ${text || 'aucun détail'}`);
   }
 
-  const data = await response.json();
+  // Le webhook peut renvoyer un corps vide si le workflow n8n s'interrompt
+  // avant le nœud "Respond" (ex: erreur Gemini ou PATCH Airtable).
+  const raw = await response.text();
+  if (!raw || !raw.trim()) {
+    throw new Error(
+      "Réponse vide du workflow n8n — l'extraction Gemini ou l'enregistrement Airtable a probablement échoué. Vérifiez l'exécution dans n8n."
+    );
+  }
+
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(`Réponse n8n non-JSON : ${raw.slice(0, 200)}`);
+  }
   return data as RIExtrait;
 }

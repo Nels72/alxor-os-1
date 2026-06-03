@@ -7,8 +7,12 @@ export interface DocumentConfig {
   label: string;
   phase: 1 | 2 | 3;
   obligatoire: boolean;
+  /** Empêche de passer en Phase 2 tant que non fourni */
+  bloquant?: boolean;
   description?: string;
   peut_etre_provisoire?: boolean;
+  /** Délai par défaut (jours) pour l'échéance d'un document provisoire. Défaut 90. */
+  delai_provisoire_jours?: number;
 }
 
 // ============================
@@ -21,6 +25,7 @@ const AUTO_PHASE_1: DocumentConfig[] = [
     label: 'Permis de Conduire',
     phase: 1,
     obligatoire: true,
+    bloquant: true,
     description: 'Recto-verso',
     peut_etre_provisoire: true,
   },
@@ -28,15 +33,17 @@ const AUTO_PHASE_1: DocumentConfig[] = [
     type: 'carte_grise',
     label: 'Carte Grise',
     phase: 1,
-    obligatoire: true,
+    obligatoire: false,
     description: 'Certificat d\'immatriculation du véhicule',
     peut_etre_provisoire: true,
+    delai_provisoire_jours: 30, // Carte Grise Barrée : valide 30 jours (règle relance n8n)
   },
   {
     type: 'releve_information',
     label: 'Relevé(s) d\'Information 36 mois',
     phase: 1,
     obligatoire: true,
+    bloquant: true,
     description: 'Historique assurance sur 36 derniers mois',
   },
 ];
@@ -51,6 +58,7 @@ const MRP_PHASE_1: DocumentConfig[] = [
     label: 'KBIS',
     phase: 1,
     obligatoire: true,
+    bloquant: true,
     description: 'Extrait K-bis de moins de 3 mois',
   },
   {
@@ -64,22 +72,15 @@ const MRP_PHASE_1: DocumentConfig[] = [
     type: 'bail_ou_taxe_fonciere',
     label: 'Bail Commercial OU Taxe Foncière',
     phase: 1,
-    obligatoire: true,
+    obligatoire: false,
     description: 'Préciser lequel dans les notes',
   },
   {
     type: 'bilan_comptable',
     label: 'Bilan Comptable',
     phase: 1,
-    obligatoire: true,
+    obligatoire: false,
     description: 'Dernier exercice fiscal clos',
-  },
-  {
-    type: 'descriptif_activite',
-    label: 'Descriptif Activité',
-    phase: 1,
-    obligatoire: true,
-    description: 'Description détaillée de l\'activité professionnelle',
   },
   {
     type: 'attestation_assurance_actuelle',
@@ -101,13 +102,6 @@ const HABITATION_PHASE_1: DocumentConfig[] = [
     phase: 1,
     obligatoire: true,
     description: 'CNI ou Passeport en cours de validité',
-  },
-  {
-    type: 'justificatif_domicile',
-    label: 'Justificatif de Domicile',
-    phase: 1,
-    obligatoire: true,
-    description: 'Facture de moins de 3 mois',
   },
   {
     type: 'titre_propriete_ou_bail',
@@ -157,13 +151,6 @@ const SANTE_INDIVIDUELLE_PHASE_1: DocumentConfig[] = [
     phase: 1,
     obligatoire: true,
     description: 'Pré-rempli par l\'IA',
-  },
-  {
-    type: 'justificatif_domicile',
-    label: 'Justificatif de Domicile',
-    phase: 1,
-    obligatoire: true,
-    description: 'Facture de moins de 3 mois',
   },
   {
     type: 'rib_iban',
@@ -326,13 +313,6 @@ const PREVOYANCE_PHASE_1: DocumentConfig[] = [
     description: '3 derniers bulletins ou liasse fiscale TNS',
   },
   {
-    type: 'justificatif_domicile',
-    label: 'Justificatif de Domicile',
-    phase: 1,
-    obligatoire: true,
-    description: 'Facture de moins de 3 mois',
-  },
-  {
     type: 'rib_iban',
     label: 'RIB/IBAN',
     phase: 1,
@@ -383,13 +363,6 @@ const VIE_PHASE_1: DocumentConfig[] = [
     phase: 1,
     obligatoire: true,
     description: 'CNI ou Passeport en cours de validité',
-  },
-  {
-    type: 'justificatif_domicile',
-    label: 'Justificatif de Domicile',
-    phase: 1,
-    obligatoire: true,
-    description: 'Facture de moins de 3 mois',
   },
   {
     type: 'rib_iban',
@@ -463,13 +436,6 @@ const EMPRUNTEUR_PHASE_1: DocumentConfig[] = [
     phase: 1,
     obligatoire: true,
     description: 'Pré-rempli par l\'IA',
-  },
-  {
-    type: 'justificatif_domicile',
-    label: 'Justificatif de Domicile',
-    phase: 1,
-    obligatoire: true,
-    description: 'Facture de moins de 3 mois',
   },
   {
     type: 'rib_iban',
@@ -548,36 +514,88 @@ const PHASE_3_COMMUNE: DocumentConfig[] = [
 ];
 
 // ============================
+// GÉNÉRIQUE (PJ, PLAISANCE, CYBER, etc.)
+// ============================
+
+const GENERIC_PHASE_1: DocumentConfig[] = [
+  {
+    type: 'carte_identite',
+    label: 'Carte d\'Identité',
+    phase: 1,
+    obligatoire: true,
+    description: 'CNI ou Passeport en cours de validité',
+  },
+];
+
+// ============================
 // EXPORT DES CONFIGURATIONS PAR PRODUIT
 // ============================
 
+// ============================
+// RCD SPÉCIFIQUE (MRP + Relevé de Sinistralité)
+// ============================
+
+const RCD_PHASE_1: DocumentConfig[] = [
+  ...MRP_PHASE_1,
+  {
+    type: 'releve_sinistralite',
+    label: 'Relevé de Sinistralité',
+    phase: 1,
+    obligatoire: false,
+    description: 'Historique sinistralité décennale',
+  },
+];
+
+const _autoSet = [...AUTO_PHASE_1, ...PHASE_2_COMMUNE, ...PHASE_3_COMMUNE];
+const _mrpSet = [...MRP_PHASE_1, ...PHASE_2_COMMUNE, ...PHASE_3_COMMUNE];
+const _rcdSet = [...RCD_PHASE_1, ...PHASE_2_COMMUNE, ...PHASE_3_COMMUNE];
+const _habitationSet = [...HABITATION_PHASE_1, ...PHASE_2_COMMUNE, ...PHASE_3_COMMUNE];
+const _santeSet = [...SANTE_INDIVIDUELLE_PHASE_1, ...SANTE_INDIVIDUELLE_PHASE_2];
+const _santeCollSet = [...SANTE_COLLECTIVE_PHASE_1, ...SANTE_COLLECTIVE_PHASE_2];
+const _prevoyanceSet = [...PREVOYANCE_PHASE_1, ...PREVOYANCE_PHASE_2];
+const _vieSet = [...VIE_PHASE_1, ...VIE_PHASE_2];
+const _emprunteurSet = [...EMPRUNTEUR_PHASE_1, ...EMPRUNTEUR_PHASE_2];
+const _genericSet = [...GENERIC_PHASE_1, ...PHASE_2_COMMUNE, ...PHASE_3_COMMUNE];
+
 export const WORKFLOW_DOCUMENTS: Record<string, DocumentConfig[]> = {
-  // AUTO
-  auto: [...AUTO_PHASE_1, ...PHASE_2_COMMUNE, ...PHASE_3_COMMUNE],
-  
-  // MULTIRISQUE PRO
-  mrp: [...MRP_PHASE_1, ...PHASE_2_COMMUNE, ...PHASE_3_COMMUNE],
-  rc_pro: [...MRP_PHASE_1, ...PHASE_2_COMMUNE, ...PHASE_3_COMMUNE],
-  pro: [...MRP_PHASE_1, ...PHASE_2_COMMUNE, ...PHASE_3_COMMUNE],
-  
-  // HABITATION
-  habitation: [...HABITATION_PHASE_1, ...PHASE_2_COMMUNE, ...PHASE_3_COMMUNE],
-  
-  // SANTÉ
-  sante: [...SANTE_INDIVIDUELLE_PHASE_1, ...SANTE_INDIVIDUELLE_PHASE_2],
-  sante_individuelle: [...SANTE_INDIVIDUELLE_PHASE_1, ...SANTE_INDIVIDUELLE_PHASE_2],
-  sante_collective: [...SANTE_COLLECTIVE_PHASE_1, ...SANTE_COLLECTIVE_PHASE_2],
-  
-  // PRÉVOYANCE
-  prevoyance: [...PREVOYANCE_PHASE_1, ...PREVOYANCE_PHASE_2],
-  
-  // ASSURANCE VIE
-  vie: [...VIE_PHASE_1, ...VIE_PHASE_2],
-  assurance_vie: [...VIE_PHASE_1, ...VIE_PHASE_2],
-  
-  // ASSURANCE EMPRUNTEUR
-  emprunteur: [...EMPRUNTEUR_PHASE_1, ...EMPRUNTEUR_PHASE_2],
-  assurance_emprunteur: [...EMPRUNTEUR_PHASE_1, ...EMPRUNTEUR_PHASE_2],
+  // ── Codes Airtable (source de vérité) ──────────────────
+  // Véhicule
+  AUT:       _autoSet,
+  MOT:       _autoSet,
+  CYCLO:     _autoSet,
+  FLO_AUT:   _autoSet,
+  PLAISANCE: _genericSet,
+  // Particulier
+  MRH:       _habitationSet,
+  PNO:       _habitationSet,
+  SNT:       _santeSet,
+  PJ:        _genericSet,
+  // Professionnel
+  MRP:       _mrpSet,
+  RCPRO:     _mrpSet,
+  RCE:       _mrpSet,
+  RCD:       _rcdSet,
+  CYBER:     _genericSet,
+  COLL:      _santeCollSet,
+  // Transversal
+  EMPRUNTEUR: _emprunteurSet,
+  Autre:      _genericSet,
+
+  // ── Alias legacy (rétrocompat anciens stores) ──────────
+  auto:                _autoSet,
+  mrp:                 _mrpSet,
+  rc_pro:              _mrpSet,
+  pro:                 _mrpSet,
+  habitation:          _habitationSet,
+  sante:               _santeSet,
+  sante_individuelle:  _santeSet,
+  sante_collective:    _santeCollSet,
+  prevoyance:          _prevoyanceSet,
+  vie:                 _vieSet,
+  assurance_vie:       _vieSet,
+  emprunteur:          _emprunteurSet,
+  assurance_emprunteur: _emprunteurSet,
+  generic:             _genericSet,
 };
 
 // ============================
@@ -588,8 +606,11 @@ export const WORKFLOW_DOCUMENTS: Record<string, DocumentConfig[]> = {
  * Récupère les documents requis pour un type de contrat
  */
 export function getDocumentsForContract(contractType: string): DocumentConfig[] {
+  // Essayer d'abord le code exact (ex: AUT, MRP, RCPRO)
+  if (WORKFLOW_DOCUMENTS[contractType]) return WORKFLOW_DOCUMENTS[contractType];
+  // Puis le format legacy normalisé
   const normalized = contractType.toLowerCase().replace(/\s+/g, '_');
-  return WORKFLOW_DOCUMENTS[normalized] || WORKFLOW_DOCUMENTS.auto;
+  return WORKFLOW_DOCUMENTS[normalized] || WORKFLOW_DOCUMENTS['AUT'];
 }
 
 /**

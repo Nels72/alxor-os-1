@@ -2,24 +2,22 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { 
-  ArrowLeft, 
-  Upload, 
-  CheckCircle2, 
-  ChevronRight, 
-  Zap, 
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ChevronRight,
+  Zap,
   Info,
   MapPin,
   X,
   Loader2,
-  Brain,
   Sparkles,
   Phone
 } from 'lucide-react';
 import { useStore } from '../store';
-import { WORKFLOW_DOCUMENTS } from '../lib/preDevisDocuments';
-import { createCabinetProspect, CABINET_TENANT } from '../services/airtable';
-import { Building2, User, Users } from 'lucide-react';
+import { createCabinetProspect, CABINET_TENANT, lookupContactByEmailOrPhone, type ContactLookupResult } from '../services/airtable';
+import { getProductsByCategory } from '../lib/productCatalog';
+import { Building2, User, Users, AlertTriangle, ExternalLink } from 'lucide-react';
 
 interface AddressSuggestion {
   label: string;
@@ -93,8 +91,7 @@ const ProspectForm: React.FC = () => {
   const isExpertMode = searchParams.get('mode') === 'expert';
   
   const addProspect = useStore(state => state.addProspect);
-  const uploadDoc = useStore(state => state.uploadDoc);
-  
+
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     type_client: '' as '' | 'Particulier' | 'Professionnel' | 'Entreprise',
@@ -107,7 +104,7 @@ const ProspectForm: React.FC = () => {
     adresse: '',
     siret: '',
     raison_sociale: '',
-    code_produit: 'auto',
+    code_produit: 'AUT',
     commentaires: ''
   });
 
@@ -116,8 +113,13 @@ const ProspectForm: React.FC = () => {
   const [isLoadingSiret, setIsLoadingSiret] = useState(false);
   const [siretError, setSiretError] = useState<string | null>(null);
 
+  // Duplicate contact lookup state
+  const [duplicateContacts, setDuplicateContacts] = useState<ContactLookupResult[]>([]);
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
+  const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [scanningStatus, setScanningStatus] = useState<Record<string, 'idle' | 'scanning' | 'done'>>({});
   const [addressQuery, setAddressQuery] = useState('');
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
@@ -160,17 +162,17 @@ const ProspectForm: React.FC = () => {
       ? isValidSiret(formData.siret) && formData.raison_sociale.trim().length > 0
       : true;
 
-    const identityOk = baseIdentityOk && proOk;
+    const duplicateOk = duplicateContacts.length === 0 || duplicateAcknowledged;
+    const identityOk = baseIdentityOk && proOk && duplicateOk;
 
     if (isExpertMode) return identityOk;
 
     switch (step) {
       case 1: return identityOk;
       case 2: return formData.code_produit !== '';
-      case 3: return true;
       default: return false;
     }
-  }, [formData, step, isExpertMode, isPro]);
+  }, [formData, step, isExpertMode, isPro, duplicateContacts, duplicateAcknowledged]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -262,17 +264,57 @@ const ProspectForm: React.FC = () => {
     return () => { clearTimeout(timer); controller.abort(); };
   }, [formData.siret, isPro]);
 
-  const [uploadedFiles, setUploadedFiles] = useState<Record<string, File>>({});
+  // Auto-fill adresse depuis SIRET
+  useEffect(() => {
+    if (siretResult?.adresse_siege && !formData.adresse.trim()) {
+      setFormData(prev => ({ ...prev, adresse: siretResult.adresse_siege }));
+      setAddressQuery(siretResult.adresse_siege);
+    }
+  }, [siretResult?.adresse_siege]);
+
+  // Lookup anti-doublon sur email ou téléphone
+  useEffect(() => {
+    const email = formData.email.trim().toLowerCase();
+    const phone = formatPhoneE164(formData.telephone);
+    const hasValidEmail = isValidEmail(email);
+    const hasValidPhone = /^\+33\d{9}$/.test(phone);
+
+    if (!hasValidEmail && !hasValidPhone) {
+      setDuplicateContacts([]);
+      setDuplicateAcknowledged(false);
+      return;
+    }
+
+    // Reset acknowledgement si email/tel changent
+    setDuplicateAcknowledged(false);
+
+    const controller = new AbortController();
+    const checkDuplicate = async () => {
+      setIsCheckingDuplicate(true);
+      try {
+        const results = await lookupContactByEmailOrPhone(
+          hasValidEmail ? email : undefined,
+          hasValidPhone ? phone : undefined
+        );
+        if (!controller.signal.aborted) {
+          setDuplicateContacts(results);
+        }
+      } catch {
+        // silently fail
+      } finally {
+        if (!controller.signal.aborted) setIsCheckingDuplicate(false);
+      }
+    };
+
+    const timer = setTimeout(checkDuplicate, 800);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [formData.email, formData.telephone]);
+
+  // Product catalog grouped
+  const productGroups = useMemo(() => getProductsByCategory(), []);
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const currentDocs = useMemo(() => {
-    return WORKFLOW_DOCUMENTS[formData.code_produit] || WORKFLOW_DOCUMENTS['auto'];
-  }, [formData.code_produit]);
-
-  const phase1Docs = useMemo(() => {
-    return currentDocs.filter(d => d.phase === 1);
-  }, [currentDocs]);
 
   const handleNext = () => {
     if (step === 1) {
@@ -280,30 +322,9 @@ const ProspectForm: React.FC = () => {
       setFieldErrors(errors);
       if (Object.keys(errors).length > 0) return;
     }
-    if (isStepValid) setStep(prev => Math.min(prev + 1, 3));
+    if (isStepValid) setStep(prev => Math.min(prev + 1, 2));
   };
   const handleBack = () => { setFieldErrors({}); setStep(prev => Math.max(prev - 1, 1)); };
-
-  const simulateAIScan = async (type: string) => {
-    setScanningStatus(prev => ({ ...prev, [type]: 'scanning' }));
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setScanningStatus(prev => ({ ...prev, [type]: 'done' }));
-  };
-
-  const handleFileChange = async (type: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setUploadedFiles(prev => ({ ...prev, [type]: file }));
-      await simulateAIScan(type);
-    }
-  };
-
-  const removeFile = (type: string) => {
-    const newFiles = { ...uploadedFiles };
-    delete newFiles[type];
-    setUploadedFiles(newFiles);
-    setScanningStatus(prev => ({ ...prev, [type]: 'idle' }));
-  };
 
   const handleSelectSuggestion = (s: AddressSuggestion) => {
     setFormData({ ...formData, adresse: s.label });
@@ -362,10 +383,7 @@ const ProspectForm: React.FC = () => {
 
       addProspect(newProspect);
 
-      Object.keys(uploadedFiles).forEach((type) => {
-        uploadDoc(dossier.id, type);
-      });
-
+      // Les pièces justificatives sont collectées sur l'écran détail (upload réel + extraction RI auto).
       navigate(`/prospects/${dossier.id}`);
     } catch (error) {
       console.error('Erreur création prospect:', error);
@@ -399,15 +417,15 @@ const ProspectForm: React.FC = () => {
 
         {!isExpertMode && (
           <div className="flex items-center gap-6 mb-16">
-            {[1, 2, 3].map((s) => (
+            {[1, 2].map((s) => (
               <div key={s} className="flex items-center gap-4">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black transition-all ${
-                  step === s ? 'bg-[#4F7CFF] text-white shadow-xl shadow-blue-500/30' : 
+                  step === s ? 'bg-[#4F7CFF] text-white shadow-xl shadow-blue-500/30' :
                   step > s ? 'bg-[#10B981] text-white' : 'bg-white border border-slate-200 text-slate-300'
                 }`}>
                   {step > s ? <CheckCircle2 size={20} /> : s}
                 </div>
-                {s < 3 && <div className="w-12 h-0.5 bg-slate-200" />}
+                {s < 2 && <div className="w-12 h-0.5 bg-slate-200" />}
               </div>
             ))}
           </div>
@@ -621,8 +639,12 @@ const ProspectForm: React.FC = () => {
                 <div>
                   <label className={labelClass}>Risque à couvrir <span className="text-red-500">*</span></label>
                   <select value={formData.code_produit} onChange={e => setFormData({...formData, code_produit: e.target.value})} className={inputClass}>
-                    {Object.keys(WORKFLOW_DOCUMENTS).map(key => (
-                      <option key={key} value={key}>{key.toUpperCase().replace('_', ' ')}</option>
+                    {productGroups.map(group => (
+                      <optgroup key={group.category} label={group.label}>
+                        {group.products.map(p => (
+                          <option key={p.code} value={p.code}>{p.label}</option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </div>
@@ -630,48 +652,80 @@ const ProspectForm: React.FC = () => {
             )}
 
             {/* BLOC DOCUMENTS */}
-            {(step === 3 || isExpertMode) && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <h3 className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                  <Upload size={14} className="text-[#4F7CFF]" /> Pièces justificatives (Phase 1)
-                </h3>
-                <div className="grid grid-cols-1 gap-4">
-                  {phase1Docs.map(doc => {
-                    const status = scanningStatus[doc.type] || 'idle';
-                    return (
-                      <div key={doc.type} className={`p-5 rounded-2xl border transition-all ${
-                        status === 'done' ? 'bg-green-50 border-green-200' : 
-                        status === 'scanning' ? 'bg-blue-50 border-blue-200 animate-pulse' : 'bg-slate-50 border-slate-100'
-                      }`}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                              status === 'done' ? 'bg-green-500 text-white' : 
-                              status === 'scanning' ? 'bg-[#4F7CFF] text-white' : 'bg-white text-slate-300 border border-slate-100'
-                            }`}>
-                              {status === 'done' ? <CheckCircle2 size={24} /> : status === 'scanning' ? <Brain size={24} className="animate-spin" /> : <Upload size={24} />}
-                            </div>
-                            <div>
-                              <p className="text-xs font-black text-slate-900 uppercase tracking-widest">{doc.label}</p>
-                              <p className="text-[10px] text-slate-400 font-bold uppercase">{status === 'scanning' ? "Extraction des données par l'IA..." : doc.description}</p>
-                            </div>
-                          </div>
-                          {!uploadedFiles[doc.type] ? (
-                            <label className="cursor-pointer px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-slate-900 uppercase tracking-widest hover:border-[#4F7CFF] transition-all">
-                              Joindre <input type="file" className="hidden" onChange={e => handleFileChange(doc.type, e)} />
-                            </label>
-                          ) : (
-                            <button onClick={() => removeFile(doc.type)} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><X size={20} /></button>
-                          )}
-                        </div>
-                        {status === 'scanning' && (
-                          <div className="mt-4 h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-[#4F7CFF] w-1/2 animate-[loading_2s_ease-in-out_infinite]" />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+            {/* ALERTE DOUBLON CONTACT */}
+            {duplicateContacts.length > 0 && !duplicateAcknowledged && (
+              <div className="p-5 bg-red-50 border-2 border-red-300 rounded-2xl space-y-3 animate-in fade-in duration-300">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle size={22} className="text-red-500 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-black text-red-700">
+                      Un contact existe déjà : {duplicateContacts[0].nom_complet} ({duplicateContacts[0].email || duplicateContacts[0].telephone})
+                    </p>
+                    <p className="text-xs text-red-600 mt-1">
+                      {duplicateContacts[0].nb_dossiers > 0
+                        ? `Ce contact a ${duplicateContacts[0].nb_dossiers} dossier(s) existant(s).`
+                        : 'Ce contact existe dans la base Contacts.'}
+                      {' '}Êtes-vous certain de vouloir créer un doublon ?
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 ml-[34px]">
+                  <button
+                    type="button"
+                    onClick={() => setShowDuplicateModal(true)}
+                    className="px-4 py-2 bg-white border border-red-200 rounded-xl text-[10px] font-black text-red-600 uppercase tracking-widest hover:bg-red-50 transition-all flex items-center gap-2"
+                  >
+                    <ExternalLink size={12} /> Voir la fiche contact
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDuplicateAcknowledged(true)}
+                    className="px-4 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all"
+                  >
+                    Créer quand même
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {duplicateAcknowledged && duplicateContacts.length > 0 && (
+              <div className="p-3 bg-orange-50 border border-orange-200 rounded-2xl text-xs text-orange-700 font-bold flex items-center gap-2">
+                <AlertTriangle size={14} /> Création en doublon confirmée par le courtier
+              </div>
+            )}
+
+            {/* MODALE FICHE CONTACT EXISTANT */}
+            {showDuplicateModal && duplicateContacts.length > 0 && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 animate-in fade-in duration-200" onClick={() => setShowDuplicateModal(false)}>
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 space-y-5 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-black text-slate-900">Contact existant</h3>
+                    <button onClick={() => setShowDuplicateModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors"><X size={18} /></button>
+                  </div>
+                  {duplicateContacts.map(c => (
+                    <div key={c.id} className="p-4 bg-slate-50 rounded-2xl space-y-2 border border-slate-100">
+                      <p className="font-black text-slate-900">{c.nom_complet}</p>
+                      {c.email && <p className="text-sm text-slate-600"><span className="font-bold">Email :</span> {c.email}</p>}
+                      {c.telephone && <p className="text-sm text-slate-600"><span className="font-bold">Tél :</span> {c.telephone}</p>}
+                      <p className="text-sm text-slate-600"><span className="font-bold">Dossiers :</span> {c.nb_dossiers}</p>
+                      {c.dossier_ids.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setShowDuplicateModal(false); navigate(`/prospects/${c.dossier_ids[c.dossier_ids.length - 1]}`); }}
+                          className="mt-2 px-4 py-2 bg-[#4F7CFF] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#3d6ae8] transition-all flex items-center gap-2"
+                        >
+                          <ExternalLink size={12} /> Ouvrir le dernier dossier
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => { setDuplicateAcknowledged(true); setShowDuplicateModal(false); }}
+                    className="w-full py-3 bg-red-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-red-700 transition-all"
+                  >
+                    Créer quand même (doublon)
+                  </button>
                 </div>
               </div>
             )}
@@ -686,7 +740,7 @@ const ProspectForm: React.FC = () => {
               {!isExpertMode ? (
                 <>
                   <button onClick={handleBack} className={`px-8 py-3 rounded-xl border font-bold text-slate-400 ${step === 1 ? 'invisible' : ''}`}>Retour</button>
-                  {step < 3 ? (
+                  {step < 2 ? (
                     <button 
                       onClick={handleNext} 
                       disabled={!isStepValid}

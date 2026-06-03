@@ -251,17 +251,23 @@ export const EMPRUNTEUR_GARANTIES = [
 // ============================
 
 import type { Prospect, AISuggestion } from '../types';
+import { getFicType } from './productCatalog';
 
 /**
  * Détecte le type FIC à partir du type de contrat demandé.
  */
 export function detectFicType(typeContrat: string): FicData['type'] {
+  // Lookup direct par code Airtable via productCatalog
+  const catalogFicType = getFicType(typeContrat);
+  if (catalogFicType) return catalogFicType as FicData['type'];
+
+  // Fallback regex pour les valeurs legacy ou texte libre
   const t = typeContrat.toLowerCase();
-  if (/auto|véhicule|vehicule|automobile|flotte|moto/i.test(t)) return 'auto';
-  if (/habitation|mrh/i.test(t)) return 'mrh';
-  if (/mrp|rc_pro|rc pro|pro|multirisque/i.test(t)) return 'mrp';
-  if (/sante_collective|santé collective|collective/i.test(t)) return 'sante_collective';
-  if (/sante|santé|mutuelle|complémentaire/i.test(t)) return 'sante';
+  if (/auto|véhicule|vehicule|automobile|flotte|moto|cyclo/i.test(t)) return 'auto';
+  if (/habitation|mrh|pno/i.test(t)) return 'mrh';
+  if (/mrp|rc_pro|rc pro|pro|multirisque|rce|rcd|décennale|decennale/i.test(t)) return 'mrp';
+  if (/sante_collective|santé collective|collective|coll/i.test(t)) return 'sante_collective';
+  if (/sante|santé|mutuelle|complémentaire|snt/i.test(t)) return 'sante';
   if (/prevoyance|prévoyance/i.test(t)) return 'prevoyance';
   if (/vie|épargne|epargne/i.test(t)) return 'vie';
   if (/emprunteur|prêt|pret|crédit|credit/i.test(t)) return 'emprunteur';

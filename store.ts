@@ -6,6 +6,8 @@ import { WORKFLOW_DOCUMENTS } from './lib/preDevisDocuments';
 import { uploadDocumentCabinet, qualifyDocument, fetchDocumentsForDossier } from './services/documentUpload';
 import type { AirtableDocument } from './services/airtable';
 import { saveDDAPropositions, saveDDAChoixFinal } from './services/ddaService';
+import { runVehiculeMatching } from './lib/matchingEngine';
+import { VEHICULE_CODES } from './lib/prospectProductData';
 
 const EMPTY_DOCS: string[] = [];
 
@@ -113,22 +115,38 @@ export const useStore = create<AppState>((set, get) => ({
     if (!prospect || prospect.statut === 'converti') return;
 
     const docs = state.getProspectDocs(id);
-    const productKey = prospect.type_contrat_demande?.toLowerCase().replace(/\s+/g, '_') || 'auto';
-    const config = WORKFLOW_DOCUMENTS[productKey] || WORKFLOW_DOCUMENTS['auto'];
+    // Accepte les codes Airtable (AUT, MRP) ET les anciens codes legacy (auto, mrp)
+    const rawKey = prospect.type_contrat_demande || 'AUT';
+    const productKey = WORKFLOW_DOCUMENTS[rawKey] ? rawKey : rawKey.toLowerCase().replace(/\s+/g, '_');
+    const config = WORKFLOW_DOCUMENTS[productKey] || WORKFLOW_DOCUMENTS['AUT'];
     
-    const phase1Required = config.filter(d => d.phase === 1 && d.obligatoire).map(d => d.type);
+    // Phase 1 : GES granulaire (bloquants puis obligatoires)
+    const bloquants = config.filter(d => d.phase === 1 && d.bloquant);
+    const obligatoiresP1 = config.filter(d => d.phase === 1 && d.obligatoire);
     const phase2Required = config.filter(d => d.phase === 2 && d.obligatoire).map(d => d.type);
-    
-    const phase1Complete = phase1Required.every(t => docs.includes(t));
+
+    let phase1Score = 0;
+    if (bloquants.length > 0) {
+      // Produits avec bloquants : score = proportion des bloquants fournis × 60
+      const bloquantsFournis = bloquants.filter(d => docs.includes(d.type));
+      phase1Score = Math.round((bloquantsFournis.length / bloquants.length) * 60);
+    } else if (obligatoiresP1.length > 0) {
+      // Produits sans bloquants : score = proportion des obligatoires fournis × 60
+      const obligatoiresFournis = obligatoiresP1.filter(d => docs.includes(d.type));
+      phase1Score = Math.round((obligatoiresFournis.length / obligatoiresP1.length) * 60);
+    } else {
+      phase1Score = 60; // Pas de docs Phase 1 → score max direct
+    }
+
+    const allBloquantsFournis = bloquants.length === 0 || bloquants.every(d => docs.includes(d.type));
     const phase2Complete = phase2Required.every(t => docs.includes(t));
     const hasProvisoire = prospect.documents_provisoires && Object.keys(prospect.documents_provisoires).length > 0;
     const periodeIncompleteRI = !!prospect.periode_incomplete_ri;
 
-    let score = 0;
-    if (phase1Complete) score = 60;
-    if (prospect.statut === 'devis_envoye') { if (score < 70) score = 70; }
-    if (prospect.signature_manuelle_validee) score = 80;
-    if (phase2Complete && prospect.signature_manuelle_validee) score = 90;
+    let score = phase1Score;
+    if (prospect.statut === 'devis_envoye' && allBloquantsFournis) { if (score < 70) score = 70; }
+    if (prospect.signature_manuelle_validee && allBloquantsFournis) score = 80;
+    if (phase2Complete && prospect.signature_manuelle_validee && allBloquantsFournis) score = 90;
     if (prospect.contrat_definitif_signe && !hasProvisoire && !periodeIncompleteRI) score = 100;
     else if (prospect.contrat_definitif_signe && (hasProvisoire || periodeIncompleteRI)) score = Math.min(score, 90);
     if (periodeIncompleteRI) score = Math.min(score, 90);
@@ -163,7 +181,9 @@ export const useStore = create<AppState>((set, get) => ({
     if (!prospect) return;
 
     // Simulation Scan IA si Phase 1
-    const config = WORKFLOW_DOCUMENTS[prospect.type_contrat_demande.toLowerCase()] || WORKFLOW_DOCUMENTS['auto'];
+    const rawKey2 = prospect.type_contrat_demande || 'AUT';
+    const pKey2 = WORKFLOW_DOCUMENTS[rawKey2] ? rawKey2 : rawKey2.toLowerCase().replace(/\s+/g, '_');
+    const config = WORKFLOW_DOCUMENTS[pKey2] || WORKFLOW_DOCUMENTS['AUT'];
     const isPhase1 = config.find(d => d.type === docType)?.phase === 1;
 
     if (isPhase1) {
@@ -191,52 +211,43 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   runIAAnalysis: (prospectId) => {
-    const mockSuggestions = [
-      {
-        compagnie: 'ALLIANZ',
-        score: 96,
-        tarif_estime: 1120,
-        franchise: '380€ (Fixe)',
-        garanties: 'Tous Risques Excellence, Panne 0km, Contenu du véhicule 2000€',
-        justification: ['Meilleur rapport Qualité/Prix', 'Franchise réduite', 'Assistance Premium'],
-        appetence_technique: 94,
-        competitivite_marche: 91
-      },
-      {
-        compagnie: 'AXA',
-        score: 89,
-        tarif_estime: 1195,
-        franchise: '450€',
-        garanties: 'Tous Risques Classique, Protection Juridique',
-        justification: ['Réseau de garages agréés', 'Option Zéro Franchise bris de glace'],
-        appetence_technique: 87,
-        competitivite_marche: 85
-      },
-      {
-        compagnie: 'THELEM',
-        score: 84,
-        tarif_estime: 1040,
-        franchise: '550€',
-        garanties: 'Tiers Étendu +, Vol, Incendie',
-        justification: ['Tarif ultra-compétitif', 'Relation de proximité'],
-        appetence_technique: 82,
-        competitivite_marche: 88
-      }
-    ];
+    const prospect = get().prospects.find(p => p.id === prospectId);
+    if (!prospect) return;
+
+    // Scoring réel pour Auto / Moto, mock de fallback pour les autres produits
+    const isVehicule = VEHICULE_CODES.some(
+      code => prospect.type_contrat_demande?.toUpperCase() === code
+    );
+
+    const suggestions: AISuggestion[] = isVehicule
+      ? runVehiculeMatching(prospect)
+      : [
+          // Fallback générique pour produits hors périmètre véhicule
+          {
+            compagnie: 'Compagnie A',
+            score: 85,
+            tarif_estime: 0,
+            franchise: '—',
+            garanties: 'À définir selon le produit',
+            justification: ['Scoring produit en cours de déploiement'],
+            appetence_technique: 80,
+            competitivite_marche: 75,
+          },
+        ];
 
     set((state) => ({
       prospects: state.prospects.map(p => p.id === prospectId ? {
         ...p,
         ia_analysis_done: true,
         statut: 'en_analyse',
-        ai_suggestions: mockSuggestions,
+        ai_suggestions: suggestions,
       } : p)
     }));
     get().calculateAndSetGES(prospectId);
 
-    // Sauvegarder les 3 propositions DDA dans Airtable (conformité ACPR)
-    if (prospectId.startsWith('rec')) {
-      saveDDAPropositions(prospectId, { suggestions: mockSuggestions }).catch(
+    // Sauvegarder les propositions DDA dans Airtable (conformité ACPR)
+    if (prospectId.startsWith('rec') && suggestions.length > 0) {
+      saveDDAPropositions(prospectId, { suggestions }).catch(
         (err) => console.error('Erreur sauvegarde DDA:', err)
       );
     }

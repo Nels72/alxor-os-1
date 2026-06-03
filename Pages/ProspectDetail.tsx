@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import Layout from '../components/Layout';
@@ -13,14 +13,17 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import { WORKFLOW_DOCUMENTS } from '../lib/preDevisDocuments';
+import { getProductLabel } from '../lib/productCatalog';
 import { AISuggestion, PriorityLevel } from '../types';
-import { getDossierById, getContactById, mapDossierToProspect, mapDocTypeToAirtable, type AirtableDocument } from '../services/airtable';
+import { getDossierById, getContactById, mapDossierToProspect, mapDocTypeToAirtable, updateDossierMessageInitial, type AirtableDocument } from '../services/airtable';
 import { saveDDAChoixFinal } from '../services/ddaService';
 import FicheTarification from '../components/FicheTarification';
 import FicFormModal from '../components/FicFormModal';
 import { extractDevisData, type DevisExtrait } from '../services/devisExtraction';
 import { extractRIData, type RIExtrait } from '../services/extractionRI';
 import { uploadFicPdf } from '../services/documentUpload';
+import { hydrateAutoProductData, isVehiculeProduct, calcAge, calcAnciennetePermis, permisAvantAgeMinimum, AGE_MIN_PERMIS, type AutoProductData } from '../lib/prospectProductData';
+import { Lock } from 'lucide-react';
 
 const EMPTY_AT_DOCS: AirtableDocument[] = [];
 
@@ -71,7 +74,7 @@ const ProspectDetail: React.FC = () => {
             ges_score: mapped.ges_score ?? 0,
             statut: (mapped.statut as any) || 'nouveau',
             created_at: mapped.created_at || new Date().toISOString(),
-            type_contrat_demande: mapped.type_contrat_demande || 'auto',
+            type_contrat_demande: mapped.type_contrat_demande || 'AUT',
           } as any);
         })
         .catch((err) => setAirtableError(err instanceof Error ? err.message : 'Dossier introuvable'))
@@ -97,10 +100,15 @@ const ProspectDetail: React.FC = () => {
   }, [id]);
 
   const [activeTab, setActiveTab] = useState<'docs' | 'info'>('info');
+  const matchingRef = useRef<HTMLDivElement>(null);
+  const goToMatching = () => {
+    setActiveTab('docs');
+    setTimeout(() => matchingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  };
   const [showConversionSuccessModal, setShowConversionSuccessModal] = useState(false);
   const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
-  const [previewingDoc, setPreviewingDoc] = useState<string | null>(null);
+  const [previewingDoc, setPreviewingDoc] = useState<{ label: string; url?: string } | null>(null);
   const [isValidatingSignature, setIsValidatingSignature] = useState(false);
   const [isValidatingFinalSignature, setIsValidatingFinalSignature] = useState(false);
   const [isScanning, setIsScanning] = useState<string | null>(null);
@@ -124,6 +132,18 @@ const ProspectDetail: React.FC = () => {
   const [draftNoteExpertise, setDraftNoteExpertise] = useState('');
   const [editingProvisoireFor, setEditingProvisoireFor] = useState<string | null>(null);
   const [draftDateEcheance, setDraftDateEcheance] = useState('');
+  const [besoinsAttentes, setBesoinsAttentes] = useState('');
+  const [isSavingBesoins, setIsSavingBesoins] = useState(false);
+
+  // Initialisation "Besoins et attentes" depuis les données prospect
+  useEffect(() => {
+    if (prospect) {
+      const initial = prospect.descriptif_projet
+        || (prospect.airtable_dossier_fields?.Message_Initial as string)
+        || '';
+      setBesoinsAttentes(initial);
+    }
+  }, [prospect?.id]);
 
   // Sélection par défaut de l'offre la plus élevée lors de l'analyse
   useEffect(() => {
@@ -153,25 +173,50 @@ const ProspectDetail: React.FC = () => {
     return [...prospect.ai_suggestions].sort((a, b) => b.score - a.score)[0].compagnie;
   }, [prospect?.ai_suggestions]);
 
-  const productKey = prospect?.type_contrat_demande?.toLowerCase().replace(/\s+/g, '_') || 'auto';
-  const configDocs = useMemo(() => WORKFLOW_DOCUMENTS[productKey] || WORKFLOW_DOCUMENTS['auto'], [productKey]);
+  const productKey = prospect?.type_contrat_demande || 'AUT';
+  const configDocs = useMemo(() => {
+    // Essayer le code brut (AUT, MRP, RCD...) puis lowercase, puis fallback
+    return WORKFLOW_DOCUMENTS[productKey] || WORKFLOW_DOCUMENTS[productKey.toLowerCase()] || WORKFLOW_DOCUMENTS['auto'] || [];
+  }, [productKey]);
 
   const findAirtableDoc = (workflowType: string): AirtableDocument | undefined => {
     const airtableType = mapDocTypeToAirtable(workflowType);
-    return airtableDocs.find(d => d.fields.Type_Document === airtableType || d.fields.Nom_Fichier?.toLowerCase().includes(workflowType.replace(/_/g, ' ')));
+    // Types spécifiques (Permis, RI, CG, Contrat…) → match par Type_Document
+    if (airtableType !== 'Autre' && airtableType !== 'Questionnaire') {
+      return airtableDocs.find(d => d.fields.Type_Document === airtableType);
+    }
+    // Types génériques ('Autre') → match par le préfixe label dans Nom_Fichier
+    const docConfig = configDocs.find(d => d.type === workflowType);
+    if (docConfig) {
+      const labelLower = docConfig.label.toLowerCase();
+      return airtableDocs.find(d =>
+        d.fields.Nom_Fichier?.toLowerCase().startsWith(labelLower)
+      );
+    }
+    return undefined;
   };
 
   const phase1Docs = configDocs.filter(d => d.phase === 1);
   const phase2Docs = configDocs.filter(d => d.phase === 2);
   const phase3Docs = configDocs.filter(d => d.phase === 3);
 
-  const phase1Complete = phase1Docs
-    .filter((d) => d.obligatoire)
-    .every(
-      (d) =>
-        docsUploaded.includes(d.type) ||
-        (prospect?.airtable_attachments?.[d.type]?.length ?? 0) > 0
-    );
+  // Conducteur sans antécédents (non assuré 36 mois) → le RI n'est pas requis (logique chatbot étape 10)
+  const sansAntecedents = prospect?.product_data?.type === 'vehicule' && prospect.product_data.sans_antecedents === true;
+
+  // Docs bloquants Phase 1 : TOUS doivent être fournis pour avancer
+  const bloquantsPhase1 = phase1Docs.filter(d => d.bloquant && !(sansAntecedents && d.type === 'releve_information'));
+  const bloquantsMissing = bloquantsPhase1.filter(
+    d => !docsUploaded.includes(d.type) && !(prospect?.airtable_attachments?.[d.type]?.length) && !findAirtableDoc(d.type)
+  );
+  const allBloquantsFournis = bloquantsMissing.length === 0;
+
+  // Phase 1 complète : soit tous les bloquants fournis (si bloquants existent),
+  // soit tous les obligatoires fournis (si pas de bloquants)
+  const phase1Complete = bloquantsPhase1.length > 0
+    ? allBloquantsFournis
+    : phase1Docs.filter(d => d.obligatoire).every(
+        d => docsUploaded.includes(d.type) || (prospect?.airtable_attachments?.[d.type]?.length ?? 0) > 0
+      );
   const phase2Complete = phase2Docs
     .filter((d) => d.obligatoire)
     .every(
@@ -237,7 +282,61 @@ const ProspectDetail: React.FC = () => {
     navigate('/dashboard?tab=clients');
   };
 
-  const triggerFileUpload = (type: string, phase: number) => {
+  /**
+   * Extraction IA du Relevé d'Information à partir d'un fichier PDF.
+   * Réutilisée à la fois par l'upload automatique du document RI et par
+   * le bouton de relance manuelle. Hydrate product_data + champs Airtable.
+   */
+  const runRIExtraction = async (file: File) => {
+    if (!id || !prospect) return;
+    setIsExtractingRI(true);
+    setRiExtractionError(null);
+    try {
+      const result = await extractRIData(prospect.id, file);
+      setRiExtrait(result);
+      const newDossierFields = {
+        ...(prospect.airtable_dossier_fields || {}),
+        ...result.airtableFields,
+      };
+      let riJsonParsed: Record<string, unknown> = {};
+      try {
+        if (result.airtableFields?.RI_JSON) {
+          riJsonParsed = JSON.parse(result.airtableFields.RI_JSON as string);
+        }
+      } catch {}
+      if (!riJsonParsed.vehicule_marque && result.vehicule_marque) {
+        riJsonParsed = {
+          ...riJsonParsed,
+          vehicule_marque: result.vehicule_marque,
+          vehicule_modele: result.vehicule_modele,
+          vehicule_usage: result.usage_vehicule,
+          vehicule_categorie: result.vehicule_categorie,
+          bm_nb_annees_050: result.annees_bonus_050,
+          date_releve: result.date_releve,
+          date_effet_contrat: result.date_effet_contrat,
+          nb_mois: result.nb_mois,
+          date_echeance: result.bm_date_echeance ?? result.date_echeance,
+          formule_actuelle: result.formule_actuelle,
+          sinistres: result.sinistres,
+        };
+      }
+      const productData = hydrateAutoProductData(
+        newDossierFields,
+        riJsonParsed,
+        prospect.product_data?.type === 'vehicule' ? prospect.product_data : undefined
+      );
+      updateProspect(prospect.id, {
+        airtable_dossier_fields: newDossierFields,
+        product_data: productData,
+      });
+    } catch (err) {
+      setRiExtractionError(err instanceof Error ? err.message : 'Erreur extraction RI');
+    } finally {
+      setIsExtractingRI(false);
+    }
+  };
+
+  const triggerFileUpload = (type: string, phase: number, labelOverride?: string) => {
     const docConfig = configDocs.find(d => d.type === type);
     const input = document.createElement('input');
     input.type = 'file';
@@ -250,9 +349,18 @@ const ProspectDetail: React.FC = () => {
         }
         try {
           if (id.startsWith('rec')) {
-            await uploadDocReal(id, type, docConfig?.label || type, file);
+            await uploadDocReal(id, type, labelOverride || docConfig?.label || type, file);
           } else {
             uploadDoc(id, type);
+          }
+          // Auto-extraction RI dès le chargement du document Relevé d'Information
+          // (produits véhicule). Le fichier est déjà en mémoire → pas de 2e upload.
+          if (
+            type === 'releve_information' &&
+            file.type === 'application/pdf' &&
+            isVehiculeProduct(prospect?.type_contrat_demande || '')
+          ) {
+            runRIExtraction(file).catch(console.error);
           }
         } catch (err) {
           console.error('Erreur upload:', err);
@@ -290,17 +398,14 @@ const ProspectDetail: React.FC = () => {
                 </p>
               </div>
             </div>
-            <button 
-              onClick={() => setActiveTab('docs')} 
-              disabled={prospect.ges_score >= 60}
-              className={`w-full md:w-auto px-6 py-3 font-black uppercase tracking-widest text-[10px] rounded-xl transition-all whitespace-nowrap flex items-center justify-center gap-2 ${
-                prospect.ges_score >= 60 
-                  ? 'bg-[#10B981] text-white cursor-default' 
-                  : 'bg-slate-900 text-white hover:scale-105 shadow-slate-900/10'
-              }`}
-            >
-              {prospect.ges_score >= 60 ? <><Check size={14} /> Phase 1 Complétée</> : "Gérer la GED"}
-            </button>
+            {prospect.ges_score >= 60 && (
+              <button
+                onClick={goToMatching}
+                className="w-full md:w-auto px-6 py-3 font-black uppercase tracking-widest text-[10px] rounded-xl transition-all whitespace-nowrap flex items-center justify-center gap-2 bg-[#10B981] text-white hover:scale-105 shadow-green-500/20"
+              >
+                Passer au matching <ChevronRight size={14} />
+              </button>
+            )}
           </motion.div>
         )}
 
@@ -331,7 +436,7 @@ const ProspectDetail: React.FC = () => {
                     <div>
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Nature Demande</p>
                       <div className="px-4 py-2 bg-blue-50 text-[#4F7CFF] rounded-xl border border-blue-100 flex items-center gap-2 font-black text-[11px] uppercase tracking-wider w-fit">
-                        <Target size={14} /> {prospect.type_contrat_demande}
+                        <Target size={14} /> {getProductLabel(prospect.type_contrat_demande)}
                       </div>
                     </div>
                     <div>
@@ -359,6 +464,221 @@ const ProspectDetail: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Besoins et attentes */}
+                <div className="mt-8 pt-8 border-t border-slate-100">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <FileText size={12} className="text-[#4F7CFF]" /> Besoins et attentes du client
+                  </p>
+                  <textarea
+                    value={besoinsAttentes}
+                    onChange={(e) => setBesoinsAttentes(e.target.value)}
+                    onBlur={async () => {
+                      if (!id) return;
+                      // Sauvegarde locale
+                      updateProspect(id, { descriptif_projet: besoinsAttentes });
+                      // Sauvegarde Airtable si dossier réel
+                      if (id.startsWith('rec')) {
+                        setIsSavingBesoins(true);
+                        try {
+                          await updateDossierMessageInitial(id, besoinsAttentes);
+                        } catch (err) {
+                          console.error('Erreur sauvegarde besoins:', err);
+                        } finally {
+                          setIsSavingBesoins(false);
+                        }
+                      }
+                    }}
+                    placeholder="Décrivez les besoins et attentes du client..."
+                    rows={4}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-medium text-slate-900 placeholder-slate-300 outline-none focus:ring-2 focus:ring-[#4F7CFF]/30 focus:border-[#4F7CFF] resize-none transition-all"
+                  />
+                  {isSavingBesoins && (
+                    <p className="text-[10px] text-[#4F7CFF] font-bold mt-1 flex items-center gap-1">
+                      <Loader2 size={10} className="animate-spin" /> Sauvegarde en cours...
+                    </p>
+                  )}
+                </div>
+
+                {/* ── Données de Tarification (Auto / Moto uniquement) ── */}
+                {isVehiculeProduct(prospect.type_contrat_demande) && (() => {
+                  const pd = prospect.product_data?.type === 'vehicule' ? prospect.product_data : null;
+                  const ageConducteur = calcAge(prospect.date_naissance);
+                  const hasRIData = !!(pd?.bonus_malus !== undefined || pd?.immatriculation);
+
+                  return (
+                    <div className="mt-8 pt-8 border-t border-slate-100">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <Target size={12} className="text-[#4F7CFF]" /> Données de Tarification
+                      </p>
+
+                      {!hasRIData && (
+                        <div className="mb-4 p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-center gap-3">
+                          <Search size={18} className="text-blue-400 shrink-0" />
+                          <p className="text-xs font-bold text-blue-700">Chargez le RI dans l'onglet Documents pour pré-remplir automatiquement les données tarifantes.</p>
+                        </div>
+                      )}
+
+                      {/* Bloc véhicule (lecture seule) */}
+                      {(pd?.immatriculation || pd?.vehicule_marque) && (
+                        <div className="mb-4 p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5"><Lock size={10} /> Véhicule (depuis RI)</p>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {pd?.immatriculation && <div><span className="text-slate-400 font-black uppercase text-[9px]">Immat.</span><p className="font-bold text-slate-900">{pd.immatriculation}</p></div>}
+                            {pd?.vehicule_marque && <div><span className="text-slate-400 font-black uppercase text-[9px]">Marque</span><p className="font-bold text-slate-900">{pd.vehicule_marque}</p></div>}
+                            {pd?.vehicule_modele && <div><span className="text-slate-400 font-black uppercase text-[9px]">Modèle</span><p className="font-bold text-slate-900">{pd.vehicule_modele}</p></div>}
+                            {pd?.vehicule_usage && <div><span className="text-slate-400 font-black uppercase text-[9px]">Usage</span><p className="font-bold text-slate-900">{pd.vehicule_usage}</p></div>}
+                            {pd?.vehicule_energie && <div><span className="text-slate-400 font-black uppercase text-[9px]">Énergie</span><p className="font-bold text-slate-900">{pd.vehicule_energie}</p></div>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Bloc permis + conducteur (lecture seule) */}
+                      {(pd?.date_permis || prospect.date_naissance) && (
+                        <div className="mb-4 p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5"><Lock size={10} /> Conducteur</p>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {prospect.date_naissance && <div><span className="text-slate-400 font-black uppercase text-[9px]">Date naissance</span><p className="font-bold text-slate-900">{prospect.date_naissance}{ageConducteur ? ` (${ageConducteur} ans)` : ''}</p></div>}
+                            {pd?.date_permis && <div><span className="text-slate-400 font-black uppercase text-[9px]">Date permis</span><p className="font-bold text-slate-900">{pd.date_permis}{pd.anciennete_permis_mois ? ` (${Math.floor(pd.anciennete_permis_mois / 12)} ans)` : ''}</p></div>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Bloc antécédents (lecture seule) */}
+                      {pd?.bonus_malus !== undefined && (
+                        <div className="mb-4 p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5"><Lock size={10} /> Antécédents Assurance (depuis RI)</p>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="text-slate-400 font-black uppercase text-[9px]">Bonus/Malus</span>
+                              <p className={`font-bold ${(pd.bonus_malus || 0) > 1 ? 'text-orange-600' : 'text-green-600'}`}>{pd.bonus_malus?.toFixed(2)}</p>
+                            </div>
+                            {pd.bm_nb_annees_050 !== null && pd.bm_nb_annees_050 !== undefined && (
+                              <div><span className="text-slate-400 font-black uppercase text-[9px]">Coeff. nb mois</span><p className="font-bold text-slate-900">{pd.bm_nb_annees_050} ans</p></div>
+                            )}
+                            {pd.nb_sinistres_36m !== undefined && (
+                              <div>
+                                <span className="text-slate-400 font-black uppercase text-[9px]">Sinistres 36m</span>
+                                <p className={`font-bold ${(pd.nb_sinistres_36m || 0) > 0 ? 'text-orange-600' : 'text-green-600'}`}>{pd.nb_sinistres_36m}</p>
+                              </div>
+                            )}
+                            {pd.type_sinistres && <div><span className="text-slate-400 font-black uppercase text-[9px]">Type sinistres</span><p className="font-bold text-slate-900">{pd.type_sinistres}</p></div>}
+                            {pd.compagnie_precedente && <div><span className="text-slate-400 font-black uppercase text-[9px]">Cagnie précédente</span><p className="font-bold text-slate-900">{pd.compagnie_precedente}</p></div>}
+                            <div>
+                              <span className="text-slate-400 font-black uppercase text-[9px]">Résilié</span>
+                              <p className={`font-bold ${pd.resilie ? 'text-red-600' : 'text-green-600'}`}>{pd.resilie ? 'OUI' : 'NON'}</p>
+                            </div>
+                            {pd.resilie && pd.motif_resiliation && <div className="col-span-2"><span className="text-slate-400 font-black uppercase text-[9px]">Motif</span><p className="font-bold text-red-700">{pd.motif_resiliation}</p></div>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Champs éditables courtier */}
+                      <div className="p-4 rounded-2xl border border-slate-200 space-y-4">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Saisie courtier</p>
+                        {/* Formule souhaitée */}
+                        <div>
+                          <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">Formule souhaitée</p>
+                          <div className="flex gap-2 flex-wrap">
+                            {(['RC', 'Tiers Étendu', 'Tous Risques'] as const).map(f => (
+                              <button
+                                key={f}
+                                onClick={() => updateProspect(id!, { product_data: { ...(pd || { type: 'vehicule' as const }), formule_souhaitee: f } })}
+                                className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                                  pd?.formule_souhaitee === f
+                                    ? 'bg-[#4F7CFF] text-white border-[#4F7CFF]'
+                                    : 'bg-white text-slate-500 border-slate-200 hover:border-[#4F7CFF]/50'
+                                }`}
+                              >
+                                {f}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {/* Conducteur secondaire */}
+                        <div>
+                          <label className="flex items-center gap-3 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={!!pd?.conducteur_secondaire}
+                              onChange={e => updateProspect(id!, { product_data: { ...(pd || { type: 'vehicule' as const }), conducteur_secondaire: e.target.checked } })}
+                              className="w-4 h-4 rounded border-slate-300 text-[#4F7CFF]"
+                            />
+                            <span className="text-sm font-bold text-slate-700">Conducteur secondaire</span>
+                          </label>
+                          {pd?.conducteur_secondaire && (
+                            <div className="mt-3 ml-7 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Nom</label>
+                                <input type="text" value={pd.nom_conducteur_secondaire || ''}
+                                  onChange={e => updateProspect(id!, { product_data: { ...pd, nom_conducteur_secondaire: e.target.value } })}
+                                  className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-medium text-slate-900 w-full" />
+                              </div>
+                              <div>
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Prénom</label>
+                                <input type="text" value={pd.prenom_conducteur_secondaire || ''}
+                                  onChange={e => updateProspect(id!, { product_data: { ...pd, prenom_conducteur_secondaire: e.target.value } })}
+                                  className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-medium text-slate-900 w-full" />
+                              </div>
+                              <div>
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Date de naissance</label>
+                                <input type="date" value={pd.date_naissance_conducteur_secondaire || ''}
+                                  onChange={e => updateProspect(id!, { product_data: { ...pd, date_naissance_conducteur_secondaire: e.target.value } })}
+                                  className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-medium text-slate-900 w-full" />
+                              </div>
+                              <div>
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Date de permis</label>
+                                <input type="date" value={pd.date_permis_conducteur_secondaire || ''}
+                                  onChange={e => updateProspect(id!, { product_data: { ...pd, date_permis_conducteur_secondaire: e.target.value } })}
+                                  className={`bg-white border rounded-xl px-3 py-1.5 text-sm font-medium text-slate-900 w-full ${permisAvantAgeMinimum(pd.date_naissance_conducteur_secondaire, pd.date_permis_conducteur_secondaire) ? 'border-red-400 ring-1 ring-red-200' : 'border-slate-200'}`} />
+                                {permisAvantAgeMinimum(pd.date_naissance_conducteur_secondaire, pd.date_permis_conducteur_secondaire) && (
+                                  <p className="text-[10px] font-bold text-red-600 mt-1">Permis incohérent : âge minimum {AGE_MIN_PERMIS} ans à la date du permis.</p>
+                                )}
+                              </div>
+                              <div className="sm:col-span-2">
+                                <button
+                                  type="button"
+                                  onClick={() => triggerFileUpload('permis_secondaire', 1, 'Permis Conducteur Secondaire')}
+                                  className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-[#4F7CFF]/40 bg-white text-[#4F7CFF] text-[10px] font-black uppercase tracking-widest hover:bg-[#4F7CFF]/5 transition-all"
+                                >
+                                  <Upload size={14} /> Permis CDR Secondaire
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sans antécédents (non assuré 36 mois) → RI non requis */}
+                        <div className="pt-3 border-t border-slate-100">
+                          <label className="flex items-center gap-3 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={!!pd?.sans_antecedents}
+                              onChange={e => updateProspect(id!, { product_data: {
+                                ...(pd || { type: 'vehicule' as const }),
+                                sans_antecedents: e.target.checked,
+                                ...(e.target.checked && (pd?.bonus_malus == null) ? { bonus_malus: 1.0 } : {}),
+                              } })}
+                              className="w-4 h-4 rounded border-slate-300 text-[#4F7CFF]"
+                            />
+                            <span className="text-sm font-bold text-slate-700">Conducteur sans antécédents <span className="text-slate-400 font-medium">(non assuré sur 36 mois — RI non requis)</span></span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* CTA navigation → écran Documents */}
+                <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-between gap-4 flex-wrap">
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Étape 1/2 · Informations</p>
+                  <button
+                    onClick={() => setActiveTab('docs')}
+                    className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-[#4F7CFF] text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-[#4F7CFF]/25 hover:bg-[#3b66e6] transition-all"
+                  >
+                    Passer aux documents <ChevronRight size={16} />
+                  </button>
                 </div>
               </div>
             )}
@@ -412,7 +732,20 @@ const ProspectDetail: React.FC = () => {
                               </div>
                               <div>
                                 <p className="text-base font-bold text-slate-900">{doc.label}</p>
-                                <p className="text-[11px] text-slate-400 font-bold uppercase">{isScanningThis ? "Téléversement en cours..." : doc.description}</p>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-[11px] text-slate-400 font-bold uppercase">{isScanningThis ? "Téléversement en cours..." : doc.description}</p>
+                                  {!isUploaded && doc.phase === 1 && (() => {
+                                    // RI non requis si conducteur sans antécédents
+                                    const riNonRequis = sansAntecedents && doc.type === 'releve_information';
+                                    if (doc.bloquant && !riNonRequis) {
+                                      return <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider bg-red-100 text-red-600 border border-red-200">Requis</span>;
+                                    }
+                                    if (doc.obligatoire && !riNonRequis) {
+                                      return <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider bg-orange-100 text-orange-600 border border-orange-200">Recommandé</span>;
+                                    }
+                                    return <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider bg-slate-100 text-slate-400 border border-slate-200">{riNonRequis ? 'Non requis' : 'Facultatif'}</span>;
+                                  })()}
+                                </div>
                                 {isProvisoire && <p className="text-[10px] font-bold text-orange-600 mt-0.5">Document provisoire {provisoireEcheance ? `• Échéance : ${provisoireEcheance}` : ''}</p>}
                                 {isEcheanceDepassee && (
                                   <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider bg-orange-500 text-white border border-orange-600 animate-pulse">
@@ -448,7 +781,10 @@ const ProspectDetail: React.FC = () => {
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              {isUploaded && <button onClick={() => setPreviewingDoc(doc.label)} className="p-3 text-[#4F7CFF] hover:bg-blue-100 rounded-xl transition-all"><Eye size={20} /></button>}
+                              {isUploaded && <button onClick={() => {
+                                const url = atDoc?.fields.Dropbox_URL || airtableFiles?.[0]?.url;
+                                setPreviewingDoc({ label: doc.label, url });
+                              }} className="p-3 text-[#4F7CFF] hover:bg-blue-100 rounded-xl transition-all"><Eye size={20} /></button>}
                               {!isUploaded && !isScanningThis ? (
                                 <button onClick={() => triggerFileUpload(doc.type, 1)} className="px-6 py-3 bg-white border-2 border-[#4F7CFF]/40 rounded-xl text-[10px] font-black text-[#4F7CFF] uppercase tracking-widest hover:bg-[#4F7CFF]/5 transition-all flex items-center gap-2"><Upload size={14} /> Joindre</button>
                               ) : !isUploaded && isScanningThis ? (
@@ -466,7 +802,7 @@ const ProspectDetail: React.FC = () => {
                                     if (!id || !prospect) return;
                                     if (e.target.checked) {
                                       setEditingProvisoireFor(doc.type);
-                                      setDraftDateEcheance(provisoireEcheance || new Date(Date.now() + 90*24*60*60*1000).toISOString().slice(0,10));
+                                      setDraftDateEcheance(provisoireEcheance || new Date(Date.now() + (doc.delai_provisoire_jours ?? 90)*24*60*60*1000).toISOString().slice(0,10));
                                     } else {
                                       setEditingProvisoireFor(null);
                                       if (atDoc) {
@@ -506,7 +842,12 @@ const ProspectDetail: React.FC = () => {
                   </div>
 
                   {/* Extraction RI — uniquement pour produits auto/moto/flotte */}
-                  {/auto|véhicule|vehicule|automobile|flotte|moto/i.test(productKey) && (
+                  {/^(AUT|MOT|CYCLO|FLO_AUT|auto|moto|cyclo|flotte)/i.test(productKey) && (
+                    sansAntecedents ? (
+                    <div className="mt-6 p-4 rounded-2xl border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500 flex items-center gap-2">
+                      <Info size={14} /> Relevé d'Information non requis — conducteur sans antécédents (non assuré sur 36 mois).
+                    </div>
+                    ) : (
                     <div className="mt-6 p-5 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/30">
                       <div className="flex items-center gap-4 mb-3">
                         <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
@@ -514,11 +855,16 @@ const ProspectDetail: React.FC = () => {
                         </div>
                         <div>
                           <p className="text-sm font-black text-slate-900">Extraction Relevé d'Information</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase">IA Gemini • Données auto-remplies dans la Fiche Tarification</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">IA Gemini • Lancée automatiquement au chargement du RI</p>
                         </div>
                         {riExtrait && (
                           <span className="ml-auto flex items-center gap-1 px-3 py-1 rounded-lg bg-green-100 text-green-700 text-[10px] font-black uppercase">
                             <CheckCircle size={12} /> RI Extrait
+                          </span>
+                        )}
+                        {isExtractingRI && (
+                          <span className="ml-auto flex items-center gap-1 px-3 py-1 rounded-lg bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase">
+                            <Loader2 size={12} className="animate-spin" /> Analyse IA…
                           </span>
                         )}
                       </div>
@@ -544,51 +890,47 @@ const ProspectDetail: React.FC = () => {
                             <span className={`font-bold ${riExtrait.resilie ? 'text-red-600' : 'text-green-600'}`}>{riExtrait.resilie ? 'OUI' : 'NON'}</span>
                           </div>
                         </div>
+                      ) : isExtractingRI ? (
+                        <div className="flex items-center justify-center gap-3 py-4 rounded-xl border-2 border-indigo-300 bg-indigo-100 text-indigo-600">
+                          <Loader2 size={18} className="animate-spin" /> Extraction IA en cours…
+                        </div>
                       ) : (
-                        <label className={`flex items-center justify-center gap-3 py-4 rounded-xl border-2 cursor-pointer transition-all
-                          ${isExtractingRI ? 'border-indigo-300 bg-indigo-100 text-indigo-600' : 'border-indigo-200 bg-white text-indigo-600 hover:bg-indigo-50'}`}>
-                          {isExtractingRI ? (
-                            <><Loader2 size={18} className="animate-spin" /> Extraction IA en cours...</>
-                          ) : (
-                            <><Upload size={18} /> Charger le RI (PDF)</>
-                          )}
-                          <input
-                            type="file"
-                            accept=".pdf"
-                            className="hidden"
-                            disabled={isExtractingRI}
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              setIsExtractingRI(true);
-                              setRiExtractionError(null);
-                              try {
-                                const result = await extractRIData(prospect.id, file);
-                                setRiExtrait(result);
-                                // Mise à jour locale du prospect avec les champs Airtable extraits
-                                updateProspect(prospect.id, {
-                                  airtable_dossier_fields: {
-                                    ...(prospect.airtable_dossier_fields || {}),
-                                    ...result.airtableFields,
-                                  },
-                                });
-                              } catch (err) {
-                                setRiExtractionError(err instanceof Error ? err.message : 'Erreur extraction RI');
-                              } finally {
-                                setIsExtractingRI(false);
-                                e.target.value = '';
-                              }
-                            }}
-                          />
-                        </label>
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          {riExtractionError
+                            ? 'L’analyse a échoué. Rechargez le document « Relevé(s) d’Information 36 mois » ci-dessus pour relancer.'
+                            : 'Chargez le document « Relevé(s) d’Information 36 mois » ci-dessus : l’analyse IA se lance automatiquement.'}
+                        </p>
                       )}
                     </div>
+                    )
                   )}
 
-                  <div className="mt-10 pt-8 border-t border-slate-100">
+                  <div ref={matchingRef} className="mt-10 pt-8 border-t border-slate-100 scroll-mt-6">
+                    {/* Alerte docs bloquants manquants */}
+                    {bloquantsMissing.length > 0 && !prospect.ia_analysis_done && (
+                      <div className="mb-4 p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3">
+                        <AlertTriangle size={18} className="text-red-500 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-black text-red-700 uppercase tracking-wider">Documents requis manquants</p>
+                          <p className="text-xs text-red-600 font-bold mt-1">
+                            {bloquantsMissing.map(d => d.label).join(', ')}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {/* Warning docs obligatoires manquants (non bloquant) */}
+                    {allBloquantsFournis && !prospect.ia_analysis_done && phase1Docs.some(d => d.obligatoire && !d.bloquant && !docsUploaded.includes(d.type) && !(prospect?.airtable_attachments?.[d.type]?.length) && !findAirtableDoc(d.type)) && (
+                      <div className="mb-4 p-4 rounded-2xl bg-orange-50 border border-orange-200 flex items-start gap-3">
+                        <AlertCircle size={18} className="text-orange-500 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-bold text-orange-700">Des documents recommandés sont manquants, mais vous pouvez lancer l'analyse.</p>
+                        </div>
+                      </div>
+                    )}
                     <button
                       onClick={() => runIAAnalysis(prospect.id)}
                       disabled={!phase1Complete || prospect.ia_analysis_done}
+                      title={bloquantsMissing.length > 0 ? `Documents requis manquants : ${bloquantsMissing.map(d => d.label).join(', ')}` : undefined}
                       className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-4 transition-all ${
                         prospect.ia_analysis_done
                           ? 'bg-[#10B981] text-white cursor-default shadow-lg'
@@ -877,7 +1219,7 @@ const ProspectDetail: React.FC = () => {
                           </div>
                           <div className="flex items-center gap-2">
                             {ribUploaded ? (
-                              <><button onClick={() => setPreviewingDoc(ribDoc?.label || 'RIB')} className="p-3 text-[#4F7CFF] hover:bg-blue-100 rounded-xl transition-all"><Eye size={20} /></button>
+                              <><button onClick={() => setPreviewingDoc({ label: 'RIB', url: undefined })} className="p-3 text-[#4F7CFF] hover:bg-blue-100 rounded-xl transition-all"><Eye size={20} /></button>
                               <span className="px-4 py-2 bg-green-50 text-green-600 rounded-xl font-black text-[10px] uppercase border border-green-100">Reçu</span></>
                             ) : (
                               <button onClick={() => triggerFileUpload('rib_iban', 2)} className="px-6 py-3 bg-white border-2 border-[#4F7CFF]/40 rounded-xl text-[10px] font-black text-[#4F7CFF] uppercase tracking-widest hover:bg-[#4F7CFF]/5 transition-all flex items-center gap-2"><Upload size={14} /> Joindre</button>
@@ -921,7 +1263,10 @@ const ProspectDetail: React.FC = () => {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            {isUploaded && <button onClick={() => setPreviewingDoc(doc.label)} className="p-3 text-[#4F7CFF] hover:bg-blue-100 rounded-xl transition-all"><Eye size={20} /></button>}
+                            {isUploaded && <button onClick={() => {
+                              const atd = findAirtableDoc(doc.type);
+                              setPreviewingDoc({ label: doc.label, url: atd?.fields.Dropbox_URL || undefined });
+                            }} className="p-3 text-[#4F7CFF] hover:bg-blue-100 rounded-xl transition-all"><Eye size={20} /></button>}
                             {!isUploaded ? <button onClick={() => triggerFileUpload(doc.type, 2)} className="px-6 py-3 bg-white border-2 border-[#4F7CFF]/40 rounded-xl text-[10px] font-black text-[#4F7CFF] uppercase tracking-widest hover:bg-[#4F7CFF]/5 transition-all flex items-center gap-2"><Upload size={14} /> Joindre</button> : <span className="px-4 py-2 bg-green-50 text-green-600 rounded-xl font-black text-[10px] uppercase border border-green-100">Reçu</span>}
                           </div>
                         </div>
@@ -991,7 +1336,7 @@ const ProspectDetail: React.FC = () => {
                                   <input type="checkbox" checked={!!isProvisoire || editingProvisoireFor === doc.type}
                                     onChange={(e) => {
                                       if (!id || !prospect) return;
-                                      if (e.target.checked) { setEditingProvisoireFor(doc.type); setDraftDateEcheance(prospect.documents_provisoires?.[doc.type]?.date_echeance || new Date(Date.now() + 90*24*60*60*1000).toISOString().slice(0,10)); }
+                                      if (e.target.checked) { setEditingProvisoireFor(doc.type); setDraftDateEcheance(prospect.documents_provisoires?.[doc.type]?.date_echeance || new Date(Date.now() + (doc.delai_provisoire_jours ?? 90)*24*60*60*1000).toISOString().slice(0,10)); }
                                       else { setEditingProvisoireFor(null); const { [doc.type]: _, ...rest } = prospect.documents_provisoires || {}; updateProspect(id, { documents_provisoires: Object.keys(rest).length ? rest : undefined }); }
                                     }}
                                     className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500" />
@@ -1146,8 +1491,28 @@ const ProspectDetail: React.FC = () => {
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPreviewingDoc(null)} className="absolute inset-0 bg-slate-900/80 backdrop-blur-md" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative w-full max-w-4xl bg-white rounded-[2rem] overflow-hidden shadow-2xl h-[80vh] flex flex-col">
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white"><h3 className="text-xl font-black text-slate-900">Aperçu : {previewingDoc}</h3><button onClick={() => setPreviewingDoc(null)} className="p-3 text-slate-400 hover:text-slate-900 rounded-full hover:bg-slate-100 transition-all"><X size={24}/></button></div>
-              <div className="flex-1 bg-slate-200 flex items-center justify-center p-10"><div className="bg-white w-full h-full shadow-2xl rounded-lg flex flex-col items-center justify-center p-20 text-center"><FileText size={100} className="text-slate-200 mb-6" /><p className="text-xl font-black text-slate-400">Génération PDF en cours...</p></div></div>
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
+                <h3 className="text-xl font-black text-slate-900">Aperçu : {previewingDoc.label}</h3>
+                <div className="flex items-center gap-2">
+                  {previewingDoc.url && (
+                    <a href={previewingDoc.url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-xl bg-[#4F7CFF] text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-blue-600 transition-all">
+                      <ExternalLink size={14} /> Ouvrir
+                    </a>
+                  )}
+                  <button onClick={() => setPreviewingDoc(null)} className="p-3 text-slate-400 hover:text-slate-900 rounded-full hover:bg-slate-100 transition-all"><X size={24}/></button>
+                </div>
+              </div>
+              <div className="flex-1 bg-slate-100 flex items-center justify-center p-10">
+                {previewingDoc.url ? (
+                  <iframe src={previewingDoc.url} className="w-full h-full rounded-lg border border-slate-200 bg-white" title={previewingDoc.label} />
+                ) : (
+                  <div className="bg-white w-full h-full shadow-lg rounded-lg flex flex-col items-center justify-center p-20 text-center">
+                    <CheckCircle size={80} className="text-green-200 mb-6" />
+                    <p className="text-lg font-black text-slate-900 mb-2">Document reçu</p>
+                    <p className="text-sm text-slate-400 font-bold">L'aperçu sera disponible une fois le document traité par la GED.</p>
+                  </div>
+                )}
+              </div>
             </motion.div>
           </div>
         )}

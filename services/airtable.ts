@@ -221,8 +221,11 @@ export function mapDocTypeToAirtable(workflowType: string): DocumentType {
   return DOC_TYPE_MAPPING[workflowType] || 'Autre';
 }
 
-// Mapping code_produit (front) → Type_Contrat (Airtable singleSelect)
-const PRODUCT_TO_AIRTABLE: Record<string, string> = {
+// ── Mapping produits via PRODUCT_CATALOG ────────────────────
+import { PRODUCT_CATALOG, getProductByCode } from '../lib/productCatalog';
+
+/** Legacy front keys → code Airtable (rétrocompat anciens stores/données) */
+const LEGACY_TO_CODE: Record<string, string> = {
   auto: 'AUT',
   mrp: 'MRP',
   rc_pro: 'RCPRO',
@@ -238,22 +241,26 @@ const PRODUCT_TO_AIRTABLE: Record<string, string> = {
   assurance_emprunteur: 'EMPRUNTEUR',
 };
 
-const AIRTABLE_TO_PRODUCT: Record<string, string> = {
-  AUT: 'auto',
-  MRP: 'mrp',
-  RCPRO: 'rc_pro',
-  MRH: 'habitation',
-  SNT: 'sante_individuelle',
-  COLL: 'sante_collective',
-  EMPRUNTEUR: 'emprunteur',
-};
-
+/**
+ * Convertit un code produit (front ou Airtable) vers le code Airtable.
+ * Accepte : 'AUT', 'auto', 'MRP', 'mrp', 'rc_pro', etc.
+ */
 export function mapProductToAirtable(code: string): string {
-  return PRODUCT_TO_AIRTABLE[code.toLowerCase()] || 'Autre';
+  // Si c'est déjà un code Airtable valide, on le retourne directement
+  if (getProductByCode(code)) return code;
+  // Sinon, tenter le mapping legacy
+  return LEGACY_TO_CODE[code.toLowerCase()] || 'Autre';
 }
 
+/**
+ * Convertit un code Airtable vers le code front.
+ * Avec le nouveau catalogue, le code Airtable EST le code front.
+ */
 export function mapAirtableToProduct(typeContrat: string): string {
-  return AIRTABLE_TO_PRODUCT[typeContrat] || typeContrat?.toLowerCase() || 'auto';
+  // Le code Airtable est désormais le code canonique
+  if (getProductByCode(typeContrat)) return typeContrat;
+  // Fallback legacy
+  return typeContrat?.toLowerCase() || 'AUT';
 }
 
 // ============================
@@ -401,7 +408,7 @@ export async function createCabinetProspect(input: CabinetProspectInput): Promis
     email: input.email,
     telephone: input.telephone,
     adresse: input.adresse,
-    type_contrat: mapProductToAirtable(input.code_produit),
+    type_contrat: mapProductToAirtable(input.code_produit), // code catalogue = code Airtable
     commentaires: input.commentaires || '',
     civilite: input.civilite,
     date_naissance: input.date_naissance,
@@ -432,6 +439,20 @@ export async function createCabinetProspect(input: CabinetProspectInput): Promis
     contact: { id: data.contact_id, fields: {} } as AirtableContact,
     dossier: { id: data.dossier_id, fields: data.dossier_fields || {} } as AirtableDossier,
   };
+}
+
+// ============================
+// PATCH helpers unitaires
+// ============================
+
+/**
+ * Met à jour le champ Message_Initial (Besoins et attentes) sur un Dossier.
+ */
+export async function updateDossierMessageInitial(
+  dossierId: string,
+  messageInitial: string
+): Promise<void> {
+  await updateDossier(dossierId, { Message_Initial: messageInitial });
 }
 
 // ============================
@@ -468,6 +489,7 @@ export function mapDossierToProspect(
     source: f.Source || 'Cabinet',
     contact_id: contact?.id,
     priority: 'Moyenne' as const,
+    descriptif_projet: f.Message_Initial || '',
   };
 }
 
@@ -479,4 +501,60 @@ export function mapProspectStatutToAirtable(statut: string): string {
     converti: 'En cours',
   };
   return mapping[statut] || 'Nouveau à traiter';
+}
+
+// ============================
+// LOOKUP CONTACT ANTI-DOUBLON
+// ============================
+
+export interface ContactLookupResult {
+  id: string;
+  nom_complet: string;
+  email: string;
+  telephone: string;
+  nb_dossiers: number;
+  dossier_ids: string[];
+}
+
+/**
+ * Recherche un contact existant par email et/ou téléphone.
+ * Retourne les contacts matchés (peut être vide).
+ */
+export async function lookupContactByEmailOrPhone(
+  email?: string,
+  phone?: string
+): Promise<ContactLookupResult[]> {
+  if (!email && !phone) return [];
+
+  const clauses: string[] = [];
+  if (email) clauses.push(`{Email}="${email}"`);
+  if (phone) clauses.push(`{Téléphone}="${phone}"`);
+
+  const formula = clauses.length > 1
+    ? `OR(${clauses.join(',')})`
+    : clauses[0];
+
+  const params = new URLSearchParams({
+    filterByFormula: formula,
+    'fields[]': ['Nom_Complet', 'Email', 'Téléphone', 'Dossiers'].join(','),
+  });
+
+  // Airtable n'accepte qu'un seul fields[] par param — il faut en envoyer plusieurs
+  const url = `${AIRTABLE_API_URL}/Contacts?filterByFormula=${encodeURIComponent(formula)}&fields%5B%5D=Nom_Complet&fields%5B%5D=Email&fields%5B%5D=T%C3%A9l%C3%A9phone&fields%5B%5D=Dossiers`;
+
+  const response = await airtableFetch(url);
+  if (!response.ok) {
+    console.error('Lookup contact failed:', response.status);
+    return [];
+  }
+
+  const data = await response.json();
+  return (data.records || []).map((r: any) => ({
+    id: r.id,
+    nom_complet: r.fields?.Nom_Complet || '(sans nom)',
+    email: r.fields?.Email || '',
+    telephone: r.fields?.['Téléphone'] || '',
+    nb_dossiers: (r.fields?.Dossiers || []).length,
+    dossier_ids: r.fields?.Dossiers || [],
+  }));
 }

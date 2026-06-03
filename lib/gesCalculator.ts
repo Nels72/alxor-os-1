@@ -3,29 +3,33 @@
 import { WORKFLOW_DOCUMENTS } from './preDevisDocuments';
 
 export const calculateGESTotal = (
-  produit: string, 
-  docsUploaded: string[], 
+  produit: string,
+  docsUploaded: string[],
   piecesContractuelles: string[] = []
 ): number => {
-  // Phase 1: Pré-devis (0-50%)
-  const docsRequis = WORKFLOW_DOCUMENTS[produit.toLowerCase()] || WORKFLOW_DOCUMENTS['auto'];
-  const docsObligatoires = docsRequis.filter(d => d.obligatoire);
-  
+  // Phase 1: Pré-devis (0-60%) — granulaire sur bloquants puis obligatoires
+  const rawKey = produit || 'AUT';
+  const docsRequis = WORKFLOW_DOCUMENTS[rawKey] || WORKFLOW_DOCUMENTS[rawKey.toLowerCase()] || WORKFLOW_DOCUMENTS['AUT'];
+  const bloquants = docsRequis.filter(d => d.phase === 1 && d.bloquant);
+  const obligatoiresP1 = docsRequis.filter(d => d.phase === 1 && d.obligatoire);
+
   let phase1Score = 0;
-  if (docsObligatoires.length === 0) {
-    phase1Score = 50;
+  if (bloquants.length > 0) {
+    const bloquantsFournis = bloquants.filter(d => docsUploaded.includes(d.type));
+    phase1Score = Math.round((bloquantsFournis.length / bloquants.length) * 60);
+  } else if (obligatoiresP1.length > 0) {
+    const obligatoiresFournis = obligatoiresP1.filter(d => docsUploaded.includes(d.type));
+    phase1Score = Math.round((obligatoiresFournis.length / obligatoiresP1.length) * 60);
   } else {
-    const uploaded = docsObligatoires.filter(d => docsUploaded.includes(d.type));
-    phase1Score = Math.round((uploaded.length / docsObligatoires.length) * 50);
+    phase1Score = 60;
   }
 
-  // Phase 2: Contractuel (0-50% additionnel)
-  // Pieces: rib, mandat_prelevement, contrat_signe
+  // Phase 2: Contractuel (0-40% additionnel → max 100%)
   const piecesRequises = ['rib', 'mandat_prelevement', 'contrat_signe'];
   const fournis = piecesRequises.filter(p => piecesContractuelles.includes(p));
-  const phase2Score = Math.round((fournis.length / piecesRequises.length) * 50);
+  const phase2Score = Math.round((fournis.length / piecesRequises.length) * 40);
 
-  return phase1Score + phase2Score;
+  return Math.min(phase1Score + phase2Score, 100);
 };
 
 export const checkConversionThreshold = (
