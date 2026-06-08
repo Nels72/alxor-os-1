@@ -22,6 +22,7 @@ import FicFormModal from '../components/FicFormModal';
 import { extractDevisData, type DevisExtrait } from '../services/devisExtraction';
 import { extractRIData, type RIExtrait } from '../services/extractionRI';
 import { uploadFicPdf } from '../services/documentUpload';
+import { sendDevisForSignature } from '../services/yousignService';
 import { hydrateAutoProductData, isVehiculeProduct, calcAge, calcAnciennetePermis, permisAvantAgeMinimum, AGE_MIN_PERMIS, type AutoProductData } from '../lib/prospectProductData';
 import { Lock } from 'lucide-react';
 
@@ -110,6 +111,8 @@ const ProspectDetail: React.FC = () => {
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [previewingDoc, setPreviewingDoc] = useState<{ label: string; url?: string } | null>(null);
   const [isValidatingSignature, setIsValidatingSignature] = useState(false);
+  const [isSendingYousign, setIsSendingYousign] = useState(false);
+  const [yousignError, setYousignError] = useState<string | null>(null);
   const [isValidatingFinalSignature, setIsValidatingFinalSignature] = useState(false);
   const [isScanning, setIsScanning] = useState<string | null>(null);
   
@@ -259,10 +262,33 @@ const ProspectDetail: React.FC = () => {
   const handleManualSignatureValidation = async () => {
     if (id) {
       setIsValidatingSignature(true);
-      // Simulation d'un délai réseau pour le feedback visuel
       await new Promise(resolve => setTimeout(resolve, 600));
       validateManualSignature(id);
       setIsValidatingSignature(false);
+    }
+  };
+
+  const handleSendYousignSignature = async () => {
+    if (!prospect || !id) return;
+    const contactId = (prospect.airtable_dossier_fields?.Contact as string[] | undefined)?.[0];
+    if (!contactId) {
+      setYousignError('Contact Airtable introuvable pour ce dossier.');
+      return;
+    }
+    setIsSendingYousign(true);
+    setYousignError(null);
+    try {
+      await sendDevisForSignature(id, contactId);
+      updateProspect(id, {
+        airtable_dossier_fields: {
+          ...prospect.airtable_dossier_fields,
+          Statut_Signature: 'En attente signature devis',
+        },
+      });
+    } catch (err: any) {
+      setYousignError(err.message || 'Erreur lors de l\'envoi en signature');
+    } finally {
+      setIsSendingYousign(false);
     }
   };
 
@@ -289,6 +315,10 @@ const ProspectDetail: React.FC = () => {
    */
   const runRIExtraction = async (file: File) => {
     if (!id || !prospect) return;
+    if (!prospect.id.startsWith('rec')) {
+      setRiExtractionError('Prospect non synchronisé avec Airtable — sauvegardez d\'abord le dossier.');
+      return;
+    }
     setIsExtractingRI(true);
     setRiExtractionError(null);
     try {
@@ -1112,6 +1142,11 @@ const ProspectDetail: React.FC = () => {
                               onChange={async (e) => {
                                 const file = e.target.files?.[0];
                                 if (!file || !prospect.id) return;
+                                if (!prospect.id.startsWith('rec')) {
+                                  setDevisExtractionError('Prospect non synchronisé avec Airtable — sauvegardez d\'abord le dossier.');
+                                  e.target.value = '';
+                                  return;
+                                }
                                 setIsExtractingDevis(true);
                                 setDevisExtractionError(null);
                                 try {
@@ -1163,25 +1198,67 @@ const ProspectDetail: React.FC = () => {
                   </div>
                   
                   <div className="space-y-4">
-                    {phase2Docs.some(d => d.type === 'signature_devis_fic') && (
-                    <div className={`flex flex-col md:flex-row md:items-center justify-between p-5 rounded-3xl border transition-all gap-4 ${signatureDevisValidee ? 'bg-green-50 border-green-200' : (prospect.statut === 'devis_envoye' ? 'bg-blue-50 border-blue-100 shadow-sm' : 'bg-slate-50 border-slate-100')}`}>
-                      <div className="flex items-center gap-5">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border-2 shrink-0 ${signatureDevisValidee ? 'bg-white border-green-200 text-[#10B981]' : 'bg-white border-blue-100 text-[#4F7CFF]'}`}>
-                          <PenTool size={24} />
+                    {phase2Docs.some(d => d.type === 'signature_devis_fic') && (() => {
+                      const statutSig = prospect.airtable_dossier_fields?.Statut_Signature as string | undefined;
+                      const isDevisSigne = statutSig === 'Devis signé' || signatureDevisValidee;
+                      const isEnAttente = statutSig === 'En attente signature devis';
+                      const isRefuse = statutSig === 'Refusé';
+                      const isExpire = statutSig === 'Expiré';
+                      const canResend = isRefuse || isExpire;
+                      const isRecId = prospect.id.startsWith('rec');
+
+                      let cardBg = 'bg-slate-50 border-slate-100';
+                      let iconStyle = 'bg-white border-blue-100 text-[#4F7CFF]';
+                      let subtitle = 'Signature électronique via Yousign';
+                      if (isDevisSigne) { cardBg = 'bg-green-50 border-green-200'; iconStyle = 'bg-white border-green-200 text-[#10B981]'; subtitle = 'Devis & FIC signés'; }
+                      else if (isEnAttente) { cardBg = 'bg-amber-50 border-amber-200'; iconStyle = 'bg-white border-amber-200 text-amber-500'; subtitle = 'En attente de signature client'; }
+                      else if (isRefuse) { cardBg = 'bg-red-50 border-red-200'; iconStyle = 'bg-white border-red-200 text-red-500'; subtitle = 'Signature refusée par le client'; }
+                      else if (isExpire) { cardBg = 'bg-red-50 border-red-200'; iconStyle = 'bg-white border-red-200 text-red-500'; subtitle = 'Demande de signature expirée'; }
+
+                      return (
+                      <div className={`flex flex-col md:flex-row md:items-center justify-between p-5 rounded-3xl border transition-all gap-4 ${cardBg}`}>
+                        <div className="flex items-center gap-5">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border-2 shrink-0 ${iconStyle}`}>
+                            <PenTool size={24} />
+                          </div>
+                          <div>
+                            <p className="text-base font-bold text-slate-900">Devis & FIC</p>
+                            <p className="text-[11px] text-slate-400 font-bold uppercase">{subtitle}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-base font-bold text-slate-900">Devis & FIC</p>
-                          <p className="text-[11px] text-slate-400 font-bold uppercase">{signatureDevisValidee ? 'Signé & Reçu' : 'Upload manuel ou lien Yousign'}</p>
+                        <div className="flex flex-col items-end gap-1.5">
+                          {isDevisSigne ? (
+                            <span className="px-6 py-2.5 text-[9px] font-black uppercase rounded-xl bg-[#10B981] text-white flex items-center gap-2">
+                              <Check size={14} /> Signé & Reçu
+                            </span>
+                          ) : isEnAttente ? (
+                            <span className="px-6 py-2.5 text-[9px] font-black uppercase rounded-xl bg-amber-500 text-white flex items-center gap-2">
+                              <Loader2 size={14} className="animate-spin" /> Signature en cours...
+                            </span>
+                          ) : (
+                            <button
+                              onClick={handleSendYousignSignature}
+                              disabled={isSendingYousign || !isRecId}
+                              className="px-6 py-2.5 text-[9px] font-black uppercase rounded-xl shadow-lg flex items-center gap-2 transition-all bg-[#4F7CFF] text-white hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
+                            >
+                              {isSendingYousign ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                              {canResend ? 'Renvoyer en Signature' : 'Envoyer en Signature'}
+                            </button>
+                          )}
+                          {!isDevisSigne && !isEnAttente && (
+                            <button
+                              onClick={handleManualSignatureValidation}
+                              disabled={isValidatingSignature}
+                              className="text-[9px] text-slate-400 hover:text-slate-600 underline font-medium transition-colors"
+                            >
+                              {isValidatingSignature ? 'Validation...' : 'Valider signature manuelle'}
+                            </button>
+                          )}
+                          {yousignError && <p className="text-[10px] text-red-500 font-medium max-w-[250px] text-right">{yousignError}</p>}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={handleManualSignatureValidation} disabled={signatureDevisValidee || isValidatingSignature} className={`px-6 py-2.5 text-[9px] font-black uppercase rounded-xl shadow-lg flex items-center gap-2 transition-all ${signatureDevisValidee ? 'bg-[#10B981] text-white cursor-default' : 'bg-slate-900 text-white hover:scale-105'}`}>
-                          {isValidatingSignature ? <Loader2 size={14} className="animate-spin" /> : signatureDevisValidee ? <Check size={14} /> : <Handshake size={14} />}
-                          {signatureDevisValidee ? "Signé & Reçu" : "Valider Signature Manuelle (80%)"}
-                        </button>
-                      </div>
-                    </div>
-                    )}
+                      );
+                    })()}
 
                     {phase2Docs.some(d => d.type === 'rib_iban') && (() => {
                       const ribDoc = phase2Docs.find(d => d.type === 'rib_iban');
