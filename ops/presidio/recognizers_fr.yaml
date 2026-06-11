@@ -1,0 +1,109 @@
+## Custom French recognizers for Alxor insurance platform
+## These extend Presidio's built-in recognizers with French-specific patterns
+
+recognizers:
+
+  # ---------- French license plate (immatriculation) ----------
+  # Format: AA-123-AA (SIV since 2009) or 1234 AB 75 (FNI legacy)
+  # We DETECT it to KEEP IT (whitelisted entity)
+  - name: FrenchLicensePlateRecognizer
+    supported_language: fr
+    supported_entity: FR_LICENSE_PLATE
+    type: custom
+    patterns:
+      - name: siv_format
+        regex: '\b[A-Z]{2}[-\s]?\d{3}[-\s]?[A-Z]{2}\b'
+        score: 0.85
+      - name: fni_format
+        regex: '\b\d{1,4}[-\s]?[A-Z]{1,3}[-\s]?\d{2,3}\b'
+        score: 0.6
+    context:
+      - immatriculation
+      - plaque
+      - vehicule
+      - voiture
+
+  # ---------- French driver license number ----------
+  - name: FrenchDriverLicenseRecognizer
+    supported_language: fr
+    supported_entity: FR_DRIVER_LICENSE
+    type: custom
+    patterns:
+      - name: fr_permis
+        regex: '\b\d{2}[A-Z]{2}\d{5}\b'
+        score: 0.7
+    context:
+      - permis
+      - conduire
+      - conducteur
+
+  # ---------- French SIRET / SIREN ----------
+  - name: FrenchSIRETRecognizer
+    supported_language: fr
+    supported_entity: FR_SIRET
+    type: custom
+    patterns:
+      - name: siret_14
+        regex: '\b\d{3}[\s]?\d{3}[\s]?\d{3}[\s]?\d{5}\b'
+        score: 0.7
+      - name: siren_9
+        regex: '\b\d{3}[\s]?\d{3}[\s]?\d{3}\b'
+        score: 0.4
+    context:
+      - siret
+      - siren
+      - entreprise
+      - societe
+      - denomination
+
+  # ---------- French national ID (carte d'identite) ----------
+  - name: FrenchNationalIDRecognizer
+    supported_language: fr
+    supported_entity: FR_NATIONAL_ID
+    type: custom
+    patterns:
+      - name: cni_12
+        regex: '\b\d{4}[\s]?\d{4}[\s]?\d{4}\b'
+        score: 0.3
+    context:
+      - carte
+      - identite
+      - cni
+      - piece
+
+  # ---------- French phone numbers ----------
+  - name: FrenchPhoneRecognizer
+    supported_language: fr
+    supported_entity: PHONE_NUMBER
+    type: custom
+    patterns:
+      - name: fr_phone_national
+        regex: '\b0[1-9][\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}\b'
+        score: 0.7
+      - name: fr_phone_intl
+        regex: '\b\+33[\s.-]?[1-9][\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}\b'
+        score: 0.85
+    context:
+      - telephone
+      - tel
+      - portable
+      - mobile
+      - appeler
+      - numero
+
+  # ---------- French date of birth pattern ----------
+  - name: FrenchDateOfBirthRecognizer
+    supported_language: fr
+    supported_entity: DATE_OF_BIRTH
+    type: custom
+    patterns:
+      - name: dob_fr
+        regex: '\b(0[1-9]|[12]\d|3[01])/(0[1-9]|1[0-2])/((19|20)\d{2})\b'
+        score: 0.4
+    context:
+      - ne
+      - nee
+      - naissance
+      - date de naissance
+      - anniversaire
+      - souscripteur

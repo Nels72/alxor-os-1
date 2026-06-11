@@ -1,0 +1,180 @@
+{
+  "name": "Alex - Lookup Client",
+  "nodes": [
+    {
+      "id": "webhook-1",
+      "name": "Webhook Alex Lookup",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "alex-lookup",
+      "parameters": {
+        "path": "alex-lookup",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      }
+    },
+    {
+      "id": "airtable-1",
+      "name": "Recherche Contact Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [250, 300],
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "apprtejZaap5ouqGm",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "Contacts",
+          "mode": "name"
+        },
+        "filterByFormula": "=LOWER({Email}) = LOWER('{{ $json.body.email }}')",
+        "options": {
+          "fields": [
+            "Prénom",
+            "Nom",
+            "Email",
+            "Téléphone",
+            "Adresse",
+            "Code Postal",
+            "Ville",
+            "Date de naissance",
+            "Profil"
+          ]
+        }
+      },
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "REMPLACER_PAR_CREDENTIAL_ID",
+          "name": "Airtable Alex"
+        }
+      },
+      "notes": "Recherche par email (insensible à la casse). Adapter le nom de la table et des champs selon votre base Airtable."
+    },
+    {
+      "id": "if-1",
+      "name": "Contact trouvé ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "respond-found",
+      "name": "Réponse - Trouvé",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [750, 200],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"found\": true,\n  \"nom\": $json.fields['Nom'] || '',\n  \"telephone\": $json.fields['Téléphone'] || '',\n  \"email\": $json.fields['Email'] || '',\n  \"adresse\": $json.fields['Adresse'] || '',\n  \"code_postal\": $json.fields['Code Postal'] || '',\n  \"ville\": $json.fields['Ville'] || '',\n  \"date_naissance\": $json.fields['Date de naissance'] || '',\n  \"profil\": $json.fields['Profil'] || ''\n} }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "respond-not-found",
+      "name": "Réponse - Non trouvé",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [750, 400],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"found\": false } }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Alex Lookup": {
+      "main": [
+        [
+          {
+            "node": "Recherche Contact Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recherche Contact Airtable": {
+      "main": [
+        [
+          {
+            "node": "Contact trouvé ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact trouvé ?": {
+      "main": [
+        [
+          {
+            "node": "Réponse - Trouvé",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Réponse - Non trouvé",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Paris"
+  }
+}

@@ -1,0 +1,44 @@
+plugins = []
+
+[functions]
+
+[functions."*"]
+
+[build]
+publish = "D:\\NELS\\AlxorFiles052026\\alex\\deploy-apporteur"
+publishOrigin = "default"
+base = "D:\\NELS\\AlxorFiles052026\\alex\\deploy-apporteur"
+
+[build.environment]
+
+[build.processing]
+
+[build.processing.css]
+
+[build.processing.html]
+
+[build.processing.images]
+
+[build.processing.js]
+
+[build.services]
+
+[[headers]]
+for = "/*"
+
+[headers.values]
+X-Frame-Options = "SAMEORIGIN"
+X-Content-Type-Options = "nosniff"
+Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]

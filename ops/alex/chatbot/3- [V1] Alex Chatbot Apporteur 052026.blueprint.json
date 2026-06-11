@@ -1,0 +1,492 @@
+{
+    "name": "3- [V1] Alex Chatbot Apporteur 052026",
+    "flow": [
+        {
+            "id": 1,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "__IMTHOOK__": "CREER_NOUVEAU_WEBHOOK"
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 150
+                },
+                "restore": {
+                    "parameters": {
+                        "__IMTHOOK__": {
+                            "label": "Alex Apporteur Webhook"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "__IMTHOOK__",
+                        "type": "hook:gateway",
+                        "label": "Webhook",
+                        "required": true
+                    }
+                ],
+                "interface": [
+                    {"name": "id_apporteur",    "type": "text",  "label": "id_apporteur"},
+                    {"name": "profil",           "type": "text",  "label": "profil"},
+                    {"name": "produit",          "type": "text",  "label": "produit"},
+                    {"name": "nom",              "type": "text",  "label": "nom"},
+                    {"name": "prenom",           "type": "text",  "label": "prenom"},
+                    {"name": "email",            "type": "email", "label": "email"},
+                    {"name": "telephone",        "type": "text",  "label": "telephone"},
+                    {"name": "adresse",          "type": "text",  "label": "adresse"},
+                    {"name": "code_postal",      "type": "text",  "label": "code_postal"},
+                    {"name": "ville",            "type": "text",  "label": "ville"},
+                    {"name": "date_naissance",   "type": "text",  "label": "date_naissance"},
+                    {"name": "siret",            "type": "text",  "label": "siret"},
+                    {"name": "description",      "type": "text",  "label": "description"},
+                    {"name": "fichier_url",      "type": "url",   "label": "fichier_url"},
+                    {"name": "contact_pref",     "type": "text",  "label": "contact_pref"},
+                    {"name": "source",           "type": "text",  "label": "source"},
+                    {"name": "submitted_at",     "type": "date",  "label": "submitted_at"}
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5738813
+            },
+            "mapper": {
+                "base": "apprtejZaap5ouqGm",
+                "table": "tblXtiocGwBJ284xa",
+                "fields": [
+                    "ID_Apporteur",
+                    "Collaborateurs_Cabinet_Client",
+                    "Cabinet_Tenant",
+                    "Nom_Apporteur",
+                    "Email_Apporteur"
+                ],
+                "formula": "{ID_Apporteur} = \"{{1.id_apporteur}}\"",
+                "maxRecords": "1",
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 150,
+                    "name": "Cherche Apporteur"
+                },
+                "restore": {
+                    "expect": {
+                        "base":   {"mode": "chose", "label": "BDD Alxor os V2 -DEV 022026"},
+                        "table":  {"mode": "chose", "label": "Apporteurs"},
+                        "fields": {"mode": "chose", "label": ["ID_Apporteur", "Collaborateurs_Cabinet_Client", "Cabinet_Tenant", "Nom_Apporteur", "Email_Apporteur"]},
+                        "useColumnId": {"mode": "chose"}
+                    },
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {"scoped": "true", "connection": "airtable3"},
+                            "label": "BDD Aloxor os V2 (User ID: usr3uezCqJvbKjBqW)"
+                        }
+                    }
+                },
+                "parameters": [
+                    {"name": "__IMTCONN__", "type": "account:airtable3,airtable2", "label": "Connection", "required": true}
+                ],
+                "interface": [
+                    {"name": "__IMTLENGTH__",               "type": "uinteger", "label": "Total number of bundles"},
+                    {"name": "id",                           "type": "text",     "label": "ID"},
+                    {"name": "ID_Apporteur",                 "type": "text",     "label": "ID_Apporteur"},
+                    {"name": "Nom_Apporteur",                "type": "text",     "label": "Nom_Apporteur"},
+                    {"name": "Email_Apporteur",              "type": "text",     "label": "Email_Apporteur"},
+                    {"name": "Cabinet_Tenant",               "spec": {"label": "Record ID"}, "type": "array", "label": "Cabinet_Tenant"},
+                    {"name": "Collaborateurs_Cabinet_Client","spec": {"label": "Record ID"}, "type": "array", "label": "Collaborateurs_Cabinet_Client"}
+                ]
+            }
+        },
+        {
+            "id": 3,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5738813
+            },
+            "mapper": {
+                "base": "apprtejZaap5ouqGm",
+                "table": "tbl4G9iXzUpCL0qIS",
+                "fields": [
+                    "Email_Pro",
+                    "Nom_Complet",
+                    "Prenom",
+                    "Statut_Activite"
+                ],
+                "formula": "RECORD_ID() = \"{{2.Collaborateurs_Cabinet_Client[]}}\"",
+                "maxRecords": "1",
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 150,
+                    "name": "Cherche Collaborateur Assigné"
+                },
+                "restore": {
+                    "expect": {
+                        "base":   {"mode": "chose", "label": "BDD Alxor os V2 -DEV 022026"},
+                        "table":  {"mode": "chose", "label": "Collaborateurs_Cabinet_Client"},
+                        "fields": {"mode": "chose", "label": ["Email_Pro", "Nom_Complet", "Prenom", "Statut_Activite"]},
+                        "useColumnId": {"mode": "chose"}
+                    },
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {"scoped": "true", "connection": "airtable3"},
+                            "label": "BDD Aloxor os V2 (User ID: usr3uezCqJvbKjBqW)"
+                        }
+                    }
+                },
+                "parameters": [
+                    {"name": "__IMTCONN__", "type": "account:airtable3,airtable2", "label": "Connection", "required": true}
+                ],
+                "interface": [
+                    {"name": "__IMTLENGTH__",  "type": "uinteger", "label": "Total number of bundles"},
+                    {"name": "id",             "type": "text",     "label": "ID"},
+                    {"name": "Nom_Complet",    "type": "text",     "label": "Nom_Complet"},
+                    {"name": "Prenom",         "type": "text",     "label": "Prenom"},
+                    {"name": "Statut_Activite","type": "text",     "label": "Statut_Activite"},
+                    {"name": "Email_Pro",      "type": "text",     "label": "Email_Pro"}
+                ]
+            }
+        },
+        {
+            "id": 4,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5738813
+            },
+            "mapper": {
+                "base": "apprtejZaap5ouqGm",
+                "table": "tblofuWbWUUW9gviM",
+                "fields": ["Nomenclature_Tally", "Nomenclature_Type_Contrat"],
+                "formula": "{Nomenclature_Tally} = '{{1.produit}}'",
+                "maxRecords": "1",
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 150,
+                    "name": "Recherche Correspondance Produit"
+                },
+                "restore": {
+                    "expect": {
+                        "base":   {"mode": "chose", "label": "BDD Alxor os V2 -DEV 022026"},
+                        "table":  {"mode": "chose", "label": "REF_Produits"},
+                        "fields": {"mode": "chose", "label": ["Nomenclature_Tally", "Nomenclature_Type_Contrat"]},
+                        "useColumnId": {"mode": "chose"}
+                    },
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {"scoped": "true", "connection": "airtable3"},
+                            "label": "BDD Aloxor os V2 (User ID: usr3uezCqJvbKjBqW)"
+                        }
+                    }
+                },
+                "parameters": [
+                    {"name": "__IMTCONN__", "type": "account:airtable3,airtable2", "label": "Connection", "required": true}
+                ],
+                "interface": [
+                    {"name": "__IMTLENGTH__",             "type": "uinteger", "label": "Total number of bundles"},
+                    {"name": "id",                        "type": "text",     "label": "ID"},
+                    {"name": "Nomenclature_Tally",        "type": "text",     "label": "Nomenclature_Tally"},
+                    {"name": "Nomenclature_Type_Contrat", "type": "text",     "label": "Nomenclature_Type_Contrat"}
+                ]
+            }
+        },
+        {
+            "id": 5,
+            "module": "airtable:ActionSearchRecords",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5738813
+            },
+            "mapper": {
+                "base": "apprtejZaap5ouqGm",
+                "table": "tbl9sFkklVymVBKNN",
+                "formula": "{Email} = \"{{1.email}}\"",
+                "maxRecords": "1",
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1200,
+                    "y": 150,
+                    "name": "Vérifier Contact"
+                },
+                "restore": {
+                    "expect": {
+                        "base":  {"mode": "chose", "label": "BDD Alxor os V2 -DEV 022026"},
+                        "table": {"mode": "chose", "label": "Contacts"},
+                        "useColumnId": {"mode": "chose"}
+                    },
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {"scoped": "true", "connection": "airtable3"},
+                            "label": "BDD Aloxor os V2 (User ID: usr3uezCqJvbKjBqW)"
+                        }
+                    }
+                },
+                "parameters": [
+                    {"name": "__IMTCONN__", "type": "account:airtable3,airtable2", "label": "Connection", "required": true}
+                ],
+                "interface": [
+                    {"name": "__IMTLENGTH__",  "type": "uinteger", "label": "Total number of bundles"},
+                    {"name": "id",             "type": "text",     "label": "ID"},
+                    {"name": "Cabinet_Tenant", "spec": {"label": "Record ID"}, "type": "array", "label": "Cabinet_Tenant"}
+                ]
+            }
+        },
+        {
+            "id": 6,
+            "module": "builtin:BasicIfElse",
+            "version": 1,
+            "mapper": {
+                "conditions": [
+                    [
+                        {
+                            "a": "{{5.__IMTLENGTH__}}",
+                            "b": "1",
+                            "o": "number:equal"
+                        }
+                    ]
+                ]
+            },
+            "metadata": {
+                "designer": {
+                    "x": 1500,
+                    "y": 150
+                }
+            },
+            "branches": [
+                {
+                    "merge": true,
+                    "label": "Le contact existe",
+                    "type": "condition",
+                    "flow": [
+                        {
+                            "id": 7,
+                            "module": "airtable:ActionUpdateRecords",
+                            "version": 3,
+                            "parameters": {
+                                "__IMTCONN__": 5738813
+                            },
+                            "mapper": {
+                                "id": "{{5.id}}",
+                                "base": "apprtejZaap5ouqGm",
+                                "table": "tbl9sFkklVymVBKNN",
+                                "record": {
+                                    "fldHUJsCrOUs40MsP": "{{1.telephone}}",
+                                    "fldhbI8vYbOCfcsXB": "{{1.adresse}}, {{1.code_postal}} {{1.ville}}",
+                                    "fldaPqG2XdwtrZQUO": ["{{2.Cabinet_Tenant[]}}"]
+                                },
+                                "typecast": false,
+                                "useColumnId": false
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 1800,
+                                    "y": 0,
+                                    "name": "MAJ Contact"
+                                },
+                                "restore": {
+                                    "expect": {
+                                        "base":  {"label": "BDD Alxor os V2 -DEV 022026"},
+                                        "table": {"label": "Contacts"},
+                                        "record": {
+                                            "nested": {
+                                                "fldaPqG2XdwtrZQUO": {"mode": "chose", "items": [null]}
+                                            }
+                                        },
+                                        "typecast":    {"mode": "chose"},
+                                        "useColumnId": {"mode": "chose"}
+                                    },
+                                    "parameters": {
+                                        "__IMTCONN__": {
+                                            "data": {"scoped": "true", "connection": "airtable3"},
+                                            "label": "BDD Aloxor os V2 (User ID: usr3uezCqJvbKjBqW)"
+                                        }
+                                    }
+                                },
+                                "parameters": [
+                                    {"name": "__IMTCONN__", "type": "account:airtable3,airtable2", "label": "Connection", "required": true}
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "merge": true,
+                    "label": "Le contact n'existe pas",
+                    "type": "else",
+                    "flow": [
+                        {
+                            "id": 8,
+                            "module": "airtable:ActionCreateRecord",
+                            "version": 3,
+                            "parameters": {
+                                "__IMTCONN__": 5738813
+                            },
+                            "mapper": {
+                                "base": "apprtejZaap5ouqGm",
+                                "table": "tbl9sFkklVymVBKNN",
+                                "record": {
+                                    "fldAwDooiI2y4EzOP": "{{1.nom}}",
+                                    "fldmzQPMoNqgFXd2R": "{{1.prenom}}",
+                                    "fldEFJC8IaZOcRhCr": "{{1.email}}",
+                                    "fldHUJsCrOUs40MsP": "{{1.telephone}}",
+                                    "fldhbI8vYbOCfcsXB": "{{1.adresse}}, {{1.code_postal}} {{1.ville}}",
+                                    "fldE2wWdOXhmPjPXN": "{{1.profil}}",
+                                    "fldZrTsRAcKkli3gi": "{{1.date_naissance}}",
+                                    "fld8d5sJ0Y1eYFJwt": "{{1.siret}}",
+                                    "fldbgs2qcgDriWMv6": "Prospect",
+                                    "fldQgXonDCQyJLx5g": "Inactif",
+                                    "fldIGeVqeh2qHTFkv": ["{{1.contact_pref}}"],
+                                    "fldaPqG2XdwtrZQUO": ["{{2.Cabinet_Tenant[]}}"]
+                                },
+                                "typecast": true,
+                                "useColumnId": false
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 1800,
+                                    "y": 300,
+                                    "name": "Créer un Nouveau Contact"
+                                },
+                                "restore": {
+                                    "expect": {
+                                        "base":  {"label": "BDD Alxor os V2 -DEV 022026"},
+                                        "table": {"label": "Contacts"},
+                                        "typecast":    {"mode": "chose"},
+                                        "useColumnId": {"mode": "chose"}
+                                    },
+                                    "parameters": {
+                                        "__IMTCONN__": {
+                                            "data": {"scoped": "true", "connection": "airtable3"},
+                                            "label": "BDD Aloxor os V2 (User ID: usr3uezCqJvbKjBqW)"
+                                        }
+                                    }
+                                },
+                                "parameters": [
+                                    {"name": "__IMTCONN__", "type": "account:airtable3,airtable2", "label": "Connection", "required": true}
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": 9,
+            "module": "builtin:BasicMerge",
+            "version": 1,
+            "mapper": null,
+            "metadata": {
+                "designer": {
+                    "x": 2100,
+                    "y": 150
+                }
+            },
+            "outputs": [
+                {
+                    "name": "Contact",
+                    "mappings": [
+                        "{{7.id}}",
+                        "{{8.id}}"
+                    ]
+                }
+            ],
+            "filters": [null, null]
+        },
+        {
+            "id": 10,
+            "module": "airtable:ActionCreateRecord",
+            "version": 3,
+            "parameters": {
+                "__IMTCONN__": 5738813
+            },
+            "mapper": {
+                "base": "apprtejZaap5ouqGm",
+                "table": "tblh45gV9PZcN1fkz",
+                "record": {
+                    "fldcxlD1Hu5QVjfu4": ["{{9.Contact}}"],
+                    "flddCTvjbBf4bSl5Y": "{{4.Nomenclature_Type_Contrat}}",
+                    "fld6wD8Zz1rknuV40": "Nouveau à traiter",
+                    "fldRhe1eKhBNH0uTg": "En attente",
+                    "fldem8qSpedXjaA3W": "alex_apporteur",
+                    "fldS1ReqnTdyaFiwc": "{{1.description}}",
+                    "fldGXmoydLIjNcwu0": ["{{2.Cabinet_Tenant[]}}"],
+                    "fldI5B0jlHk2qrQfh": ["{{2.id}}"],
+                    "fldpjUfGyZ65eTlL1": ["{{2.Collaborateurs_Cabinet_Client[]}}"],
+                    "fldFRPn013tj8ZuOU": "{{if(1.fichier_url; add(emptyarray; 1.fichier_url); ignore)}}"
+                },
+                "typecast": false,
+                "useColumnId": false
+            },
+            "metadata": {
+                "designer": {
+                    "x": 2400,
+                    "y": 150,
+                    "name": "Créer un Nouveau Dossier"
+                },
+                "restore": {
+                    "expect": {
+                        "base":  {"label": "BDD Alxor os V2 -DEV 022026"},
+                        "table": {"label": "Dossiers"},
+                        "record": {
+                            "nested": {
+                                "fldcxlD1Hu5QVjfu4":  {"spec": {"label": "Record ID"}, "type": "array", "label": "Contact"},
+                                "flddCTvjbBf4bSl5Y":  {"mode": "edit", "label": "Type_Contrat"},
+                                "fld6wD8Zz1rknuV40":  {"mode": "edit", "label": "Statut_Dossier"},
+                                "fldRhe1eKhBNH0uTg":  {"mode": "edit", "label": "Phase"},
+                                "fldGXmoydLIjNcwu0":  {"spec": {"label": "Record ID"}, "type": "array", "label": "Cabinet_Tenant"},
+                                "fldI5B0jlHk2qrQfh":  {"spec": {"label": "Record ID"}, "type": "array", "label": "Apporteur"},
+                                "fldpjUfGyZ65eTlL1":  {"spec": {"label": "Record ID"}, "type": "array", "label": "Collaborateurs_Assignes"}
+                            }
+                        },
+                        "typecast":    {"mode": "chose"},
+                        "useColumnId": {"mode": "chose"}
+                    },
+                    "parameters": {
+                        "__IMTCONN__": {
+                            "data": {"scoped": "true", "connection": "airtable3"},
+                            "label": "BDD Aloxor os V2 (User ID: usr3uezCqJvbKjBqW)"
+                        }
+                    }
+                },
+                "parameters": [
+                    {"name": "__IMTCONN__", "type": "account:airtable3,airtable2", "label": "Connection", "required": true}
+                ]
+            }
+        }
+    ],
+    "metadata": {
+        "instant": true,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": false,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "eu1.make.com"
+    }
+}

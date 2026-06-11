@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alex — Assistant Easy Courtage Assurance</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+  <script src="https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&display=swap');
+    :root {
+      --ci: #1B3A6B; --ci-light: #E8F0FE; --ci-text: #ffffff;
+      --bg: #ffffff; --bg2: #f4f6f8; --bg3: #f0f0f0;
+      --tx: #111827; --tx2: #6b7280; --tx3: #9ca3af;
+      --bd: #e5e7eb; --bd2: #d1d5db; --bd3: #f0f0f0;
+      --green: #10B981; --orange: #F59E0B; --red: #EF4444;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);font-family:'Sora',sans-serif}
+    .cw{max-width:500px;margin:0 auto;padding:1.5rem 1rem 3rem}
+
+    /* ── Header ── */
+    .ch{display:flex;align-items:center;gap:12px;padding:0 0 1.25rem;border-bottom:.5px solid var(--bd3);margin-bottom:1rem}
+    .ch-info .ch-name{font-size:13px;font-weight:600;color:var(--tx)}
+    .ch-info .ch-sub{font-size:11px;color:var(--tx2);margin-top:2px}
+    .ch-state-dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-left:5px;transition:background .3s}
+    .ch-state-dot.thinking{background:var(--orange)}
+    .ch-state-dot.success{background:var(--green)}
+
+    /* ── Avatar Alex ── */
+    .alex-wrap{position:relative;flex-shrink:0}
+    .alex-lottie{width:52px;height:52px;border-radius:50%;overflow:hidden;background:var(--ci-light);border:2px solid var(--ci-light);transition:border-color .4s}
+    .alex-lottie.thinking{border-color:rgba(245,158,11,.5)}
+    .alex-lottie.success{border-color:rgba(16,185,129,.5)}
+    #alex-container{width:100%;height:100%}
+
+    /* ── Avatar bulle (petit) ── */
+    .av-bubble{width:28px;height:28px;border-radius:50%;overflow:hidden;background:var(--ci-light);flex-shrink:0}
+    .av-bubble-lottie{width:100%;height:100%}
+
+    /* ── Progress ── */
+    .prog-row{display:flex;align-items:center;gap:10px;margin-bottom:1.25rem}
+    .back-btn{background:none;border:.5px solid var(--bd);border-radius:20px;padding:4px 10px;font-size:11.5px;font-family:'Sora',sans-serif;color:var(--tx2);cursor:pointer;display:flex;align-items:center;gap:4px;transition:all .15s;white-space:nowrap;flex-shrink:0}
+    .back-btn:hover{color:var(--tx);border-color:var(--bd2)}
+    .back-btn.hidden{visibility:hidden;pointer-events:none}
+    .prog{flex:1;height:2px;background:var(--bg2);border-radius:2px}
+    .prog-bar{height:100%;background:var(--ci);border-radius:2px;transition:width .5s ease}
+
+    /* ── Messages ── */
+    .msgs{display:flex;flex-direction:column;gap:10px;padding-bottom:.75rem;min-height:160px}
+    .msg{display:flex;gap:8px;align-items:flex-end;animation:fu .22s ease}
+    @keyframes fu{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+    .msg.bot{flex-direction:row}.msg.user{flex-direction:row-reverse}
+    .bub{max-width:82%;padding:9px 13px;font-size:13.5px;line-height:1.65}
+    .msg.bot .bub{background:var(--bg2);color:var(--tx);border-radius:4px 14px 14px 14px;border:.5px solid var(--bd3)}
+    .msg.user .bub{background:var(--ci);color:var(--ci-text);border-radius:14px 14px 4px 14px;font-weight:500}
+    .typing{display:flex;gap:4px;align-items:center;height:20px}
+    .typing span{width:5px;height:5px;border-radius:50%;background:var(--tx2);animation:dot 1.2s infinite}
+    .typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+    @keyframes dot{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
+
+    /* ── Options ── */
+    .opts{display:flex;flex-wrap:wrap;gap:7px;padding:0 0 .5rem 36px}
+    .opt{padding:7px 14px;border-radius:20px;border:.5px solid var(--bd);background:var(--bg);color:var(--tx);font-size:12.5px;font-family:'Sora',sans-serif;cursor:pointer;transition:all .12s}
+    .opt:hover{background:var(--bg2)}
+    .opt.sel{background:var(--ci);color:var(--ci-text);border-color:transparent;font-weight:500}
+
+    /* ── Inputs ── */
+    .inp-wrap{display:flex;flex-direction:column;gap:6px;padding:0 0 .5rem 36px}
+    .inp-hint{font-size:11px;color:var(--tx2);display:flex;align-items:center;gap:4px}
+    .inp-row{display:flex;gap:8px;align-items:center;position:relative}
+    .ci{flex:1;padding:9px 13px;border-radius:22px;border:.5px solid var(--bd);background:var(--bg);color:var(--tx);font-size:13.5px;font-family:'Sora',sans-serif;outline:none;transition:border .15s}
+    .ci:focus{border-color:var(--bd2)}
+    .ci.tall{border-radius:12px;resize:none;min-height:75px;padding:10px 13px;width:100%}
+    .ci.immat{letter-spacing:2px;text-transform:uppercase;font-weight:500;text-align:center}
+    .immat-valid{border-color:var(--green)!important}
+    .immat-invalid{border-color:var(--red)!important}
+    .sb{width:34px;height:34px;border-radius:50%;border:none;background:var(--ci);color:var(--ci-text);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;transition:opacity .15s}
+    .sb:hover{opacity:.8}.sb:disabled{opacity:.35;cursor:not-allowed}
+
+    /* ── Adresse autocomplete ── */
+    .addr-suggestions{position:absolute;top:calc(100% + 4px);left:0;right:40px;background:var(--bg);border:.5px solid var(--bd);border-radius:12px;z-index:100;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)}
+    .addr-item{padding:9px 13px;font-size:13px;cursor:pointer;color:var(--tx);transition:background .1s;line-height:1.4;border-bottom:.5px solid var(--bd3)}
+    .addr-item:last-child{border-bottom:none}
+    .addr-item:hover,.addr-item:focus{background:var(--bg2);outline:none}
+    .addr-item .addr-main{font-weight:500}
+    .addr-item .addr-sub{font-size:11px;color:var(--tx2);margin-top:1px}
+
+    /* ── Upload ── */
+    .uz-outer{padding:0 0 .5rem 36px}
+    .upload-zone{border:1.5px dashed var(--bd);border-radius:12px;padding:14px;text-align:center;cursor:pointer;transition:all .15s;position:relative;overflow:hidden}
+    .upload-zone:hover{border-color:var(--bd2);background:var(--bg2)}
+    .upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+    .uz-icon{font-size:20px;color:var(--tx2);margin-bottom:5px}
+    .uz-text{font-size:12px;color:var(--tx2);line-height:1.5}
+    .uz-fname{font-size:12px;color:var(--ci);font-weight:500;margin-top:4px}
+    .skip-lnk{font-size:11.5px;color:var(--tx2);cursor:pointer;text-decoration:underline;margin-top:5px;display:inline-block}
+    .skip-lnk.red{color:var(--red);font-weight:500}
+    .skip-lnk.orange{color:var(--orange);font-weight:500}
+    .uz-progress{height:3px;background:var(--bg3);border-radius:2px;margin-top:6px;overflow:hidden;display:none}
+    .uz-progress.active{display:block}
+    .uz-progress-bar{height:100%;background:var(--ci);width:0;transition:width .3s}
+    .uz-url{display:none;font-size:11px;color:var(--green);margin-top:4px;font-weight:500}
+    .uz-level{font-size:11px;padding:4px 10px;border-radius:8px;display:inline-block;margin-bottom:8px}
+    .uz-level.red{background:#FEE2E2;color:#991B1B}
+    .uz-level.orange{background:#FEF3C7;color:#92400E}
+    .uz-level.neutral{background:var(--bg2);color:var(--tx2)}
+
+    /* ── Multi upload ── */
+    .multi-files{display:flex;flex-direction:column;gap:4px;margin-top:6px;text-align:left}
+    .multi-file-item{font-size:11.5px;color:var(--ci);display:flex;align-items:center;gap:4px}
+    .multi-file-item .ti{font-size:13px;color:var(--green)}
+    .multi-confirm-row{display:flex;gap:8px;margin-top:10px;justify-content:center}
+    .multi-confirm-btn{padding:6px 14px;border-radius:18px;border:.5px solid var(--bd);background:var(--bg);color:var(--tx);font-size:12px;font-family:'Sora',sans-serif;cursor:pointer;transition:all .12s}
+    .multi-confirm-btn:hover{background:var(--bg2)}
+    .multi-confirm-btn.primary{background:var(--ci);color:var(--ci-text);border-color:transparent}
+
+    /* ── Recap ── */
+    .rc{background:var(--bg2);border:.5px solid var(--bd3);border-radius:12px;padding:14px;margin:6px 0 10px 36px;font-size:12.5px}
+    .rc-sec-lbl{font-weight:600;color:var(--ci);margin-bottom:6px;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+    .rc-sec-lbl:not(:first-child){margin-top:12px}
+    .rr{display:flex;justify-content:space-between;padding:3px 0;border-bottom:.5px solid var(--bd3)}
+    .rr:last-child{border-bottom:none}
+    .rl{color:var(--tx2)}.rv{color:var(--tx);font-weight:500;text-align:right;max-width:55%}
+    .rr-block{flex-direction:column;gap:3px}.rv-block{color:var(--tx);font-style:italic;font-size:12px;line-height:1.5}
+
+    /* ── Success ── */
+    .success{text-align:center;padding:2.5rem 1rem}
+    .success.hidden{display:none}
+    .sico{font-size:44px;color:var(--green);margin-bottom:10px}
+
+    /* ── Phone input ── */
+    .phone-hint{font-size:10.5px;color:var(--tx3);margin-top:2px}
+    .phone-valid{border-color:var(--green)!important}
+    .phone-invalid{border-color:var(--red)!important}
+  </style>
+</head>
+<body>
+<div class="cw">
+  <div class="ch">
+    <div class="alex-wrap">
+      <div class="alex-lottie" id="alex-avatar">
+        <div id="alex-container"></div>
+      </div>
+    </div>
+    <div class="ch-info">
+      <div class="ch-name">Alex <span class="ch-state-dot" id="state-dot"></span></div>
+      <div class="ch-sub" id="ch-sub">Assistant Easy Courtage Assurance</div>
+    </div>
+  </div>
+  <div class="prog-row">
+    <button class="back-btn hidden" id="back-btn">&larr; Retour</button>
+    <div class="prog"><div class="prog-bar" id="prog" style="width:3%"></div></div>
+  </div>
+  <div class="msgs" id="msgs"></div>
+  <div id="opts-zone" class="opts"></div>
+  <div id="inp-zone" class="inp-wrap hidden"></div>
+  <div id="uz-zone" class="uz-outer hidden"></div>
+  <div id="success" class="success hidden"></div>
+</div>
+
+<script>
+// ── Lottie data (chargé depuis fichier externe) ──
+let ALEX_DATA = null;
+fetch('./alex-lottie.json').then(r=>r.json()).then(d=>{ALEX_DATA=d;}).catch(()=>{console.warn('Lottie JSON non trouvé, avatar statique');});
+
+const WEBHOOK_URL = 'https://hook.eu1.make.com/ljj5zijhjxavez2kjo7ouhrbcf0liny7';
+const LOOKUP_URL  = '/api/alex-lookup';
+const UPLOADCARE_PUBLIC_KEY = 'a66f066444c9f0f50bfb';
+const UPLOADCARE_CDN_BASE = 'https://3z7o986o1b.ucarecd.net';
+
+const D = {}, history = [];
+let cur = 0, alexAnim = null, isExistingClient = false;
+
+/* ── Capitalisation prénom/nom (Marie-Claire, Jean-Pierre) ── */
+function capitalizeName(str) {
+  return str.trim().replace(/\b\w/g, c => c.toUpperCase()).replace(/-\w/g, c => c.toUpperCase());
+}
+
+/* ── Lookup client existant via n8n ── */
+async function lookupClient(email, prenom) {
+  try {
+    const res = await fetch(LOOKUP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, prenom: prenom })
+    });
+    const data = await res.json();
+    return data;
+  } catch(err) {
+    console.error('Lookup error:', err);
+    return { found: false };
+  }
+}
+
+/* ── Uploadcare : upload réel d'un fichier → URL CDN ── */
+function uploadFile(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append('UPLOADCARE_PUB_KEY', UPLOADCARE_PUBLIC_KEY);
+    formData.append('UPLOADCARE_STORE', '1');
+    formData.append('file', file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://upload.uploadcare.com/base/');
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
+    };
+
+    xhr.onload = () => {
+      try {
+        const res = JSON.parse(xhr.responseText);
+        if (res.file) {
+          resolve(UPLOADCARE_CDN_BASE + '/' + res.file + '/' + encodeURIComponent(file.name));
+        } else {
+          reject(new Error('Upload failed: ' + xhr.responseText));
+        }
+      } catch(e) { reject(e); }
+    };
+    xhr.onerror = () => reject(new Error('Network error'));
+    xhr.send(formData);
+  });
+}
+
+/* ── Init Lottie ── */
+function initAlex() {
+  if (!ALEX_DATA) {
+    setTimeout(initAlex, 100);
+    return;
+  }
+  alexAnim = lottie.loadAnimation({
+    container: document.getElementById('alex-container'),
+    renderer: 'svg', loop: true, autoplay: true,
+    animationData: ALEX_DATA
+  });
+}
+
+function setAlexState(state) {
+  const avatar = document.getElementById('alex-avatar');
+  const dot = document.getElementById('state-dot');
+  const sub = document.getElementById('ch-sub');
+  avatar.className = 'alex-lottie' + (state !== 'idle' ? ' ' + state : '');
+  dot.className = 'ch-state-dot' + (state !== 'idle' ? ' ' + state : '');
+  if (state === 'thinking') { if(alexAnim) alexAnim.setSpeed(0.5); sub.textContent = 'En train de r\u00e9pondre...'; }
+  else if (state === 'success') { if(alexAnim) alexAnim.setSpeed(2); sub.textContent = 'Demande envoy\u00e9e !'; }
+  else { if(alexAnim) alexAnim.setSpeed(1); sub.textContent = 'Assistant Easy Courtage Assurance'; }
+}
+
+function createBubbleLottie(container) {
+  if (!ALEX_DATA) return;
+  lottie.loadAnimation({ container, renderer: 'svg', loop: true, autoplay: true, animationData: ALEX_DATA });
+}
+
+/* ── Contrat précédent — niveaux par produit ── */
+const CONTRAT_LEVELS = {
+  'Auto':           {level:'orange', text:'Votre contrat en cours ou pr\u00e9c\u00e9dent est recommand\u00e9 pour faciliter la reprise et l\u2019analyse.', skip:'Passer (recommand\u00e9 de joindre)'},
+  'Moto':           {level:'orange', text:'Votre contrat en cours ou pr\u00e9c\u00e9dent est recommand\u00e9 pour faciliter la reprise et l\u2019analyse.', skip:'Passer (recommand\u00e9 de joindre)'},
+  'Cycle':          {level:'orange', text:'Votre contrat en cours ou pr\u00e9c\u00e9dent est recommand\u00e9 pour faciliter la reprise et l\u2019analyse.', skip:'Passer (recommand\u00e9 de joindre)'},
+  'Flotte Auto':    {level:'orange', text:'Votre contrat en cours ou pr\u00e9c\u00e9dent est recommand\u00e9 pour faciliter la reprise et l\u2019analyse.', skip:'Passer (recommand\u00e9 de joindre)'},
+  'RC D\u00e9cennale':    {level:'orange', text:'Votre contrat en cours ou pr\u00e9c\u00e9dent est recommand\u00e9 pour faciliter la reprise et l\u2019analyse.', skip:'Passer (recommand\u00e9 de joindre)'},
+  'RC Professionnelle': {level:'orange', text:'Un contrat en cours ou pr\u00e9c\u00e9dent peut acc\u00e9l\u00e9rer l\u2019\u00e9tude de votre dossier. Vous pouvez le d\u00e9poser ici.', skip:'Passer (conseill\u00e9 de joindre)'},
+  'RC Entreprise':  {level:'orange', text:'Un contrat en cours ou pr\u00e9c\u00e9dent peut acc\u00e9l\u00e9rer l\u2019\u00e9tude de votre dossier. Vous pouvez le d\u00e9poser ici.', skip:'Passer (conseill\u00e9 de joindre)'},
+  'Sant\u00e9 & Pr\u00e9voyance Collective': {level:'orange', text:'Un contrat en cours ou pr\u00e9c\u00e9dent peut acc\u00e9l\u00e9rer l\u2019\u00e9tude de votre dossier. Vous pouvez le d\u00e9poser ici.', skip:'Passer (conseill\u00e9 de joindre)'},
+  'Habitation':     {level:'neutral', text:'Avez-vous un contrat en cours ou pr\u00e9c\u00e9dent \u00e0 joindre ?', skip:'Passer cette \u00e9tape'},
+  'Local Professionnel': {level:'neutral', text:'Avez-vous un contrat en cours ou pr\u00e9c\u00e9dent \u00e0 joindre ?', skip:'Passer cette \u00e9tape'},
+  'Mutuelle Sant\u00e9': {level:'neutral', text:'Avez-vous un contrat en cours ou pr\u00e9c\u00e9dent \u00e0 joindre ?', skip:'Passer cette \u00e9tape'},
+  'Cyber Risque':   {level:'neutral', text:'Avez-vous un contrat en cours ou pr\u00e9c\u00e9dent \u00e0 joindre ?', skip:'Passer cette \u00e9tape'}
+};
+
+/* ── Documents spécifiques par produit ── */
+const DOCS_SPECIFIQUES = {
+  'Auto': 'Carte grise, relev\u00e9 de sinistres',
+  'Moto': 'Carte grise, relev\u00e9 de sinistres',
+  'Cycle': 'Carte grise, relev\u00e9 de sinistres',
+  'Flotte Auto': '\u00c9tat du parc automobile',
+  'Habitation': 'Bail, acte de propri\u00e9t\u00e9, attestation PNO',
+  'Local Professionnel': 'Bail commercial',
+  'RC Professionnelle': 'Kbis, description activit\u00e9',
+  'RC Entreprise': 'Kbis, bilan',
+  'RC D\u00e9cennale': 'Attestation sinistres ou Kbis',
+  'Mutuelle Sant\u00e9': 'Attestation s\u00e9curit\u00e9 sociale',
+  'Sant\u00e9 & Pr\u00e9voyance Collective': 'Effectif, contrat collectif en cours',
+  'Cyber Risque': 'Bilan IT, contrat cyber existant'
+};
+
+/* ── Steps ── */
+const S = [
+  // 0 - Accueil
+  {id:'w', bot:"Bonjour \ud83d\udc4b Je m\u2019appelle Alex. Je vais vous poser quelques questions pour qu\u2019un expert puisse vous recontacter avec une \u00e9tude vraiment personnalis\u00e9e. C\u2019est parti ?", type:'opts', opts:["C'est parti !"], next:()=>1},
+  // 1 - Prénom (brise-glace)
+  {id:'prenom_early', bot:"Avant de commencer, comment puis-je vous appeler ?", type:'input', ph:'Votre pr\u00e9nom', save:'prenom', capitalize:true, next:()=>2},
+  // 2 - Déjà client ? (après politesse intercalée dans le runner)
+  {id:'deja_client', bot:d=>d.prenom+', \u00eates-vous d\u00e9j\u00e0 client Easy Courtage Assurance ?', type:'opts', opts:['Oui','Non'], save:'_deja_client', next:d=>{if(d._deja_client==='Oui') return 3; return 5;}},
+  // 3 - Email client existant
+  {id:'client_email', bot:"Quelle adresse email utilisez-vous avec nous ?", type:'input', ph:'votre@email.fr', save:'_lookup_email', validate:'email', next:()=>4},
+  // 4 - Lookup Make (géré par le runner — type spécial)
+  {id:'client_lookup', type:'lookup', next_found:d=>d.profil?6:5, next_not_found:()=>3},
+  // 5 - Profil (nouveau prospect)
+  {id:'profil', bot:d=>'Parfait '+d.prenom+'. Pour commencer, vous faites cette demande en tant que... ?', type:'opts', opts:['Particulier','Professionnel','Entreprise'], save:'profil', next:()=>6},
+  // 6 - Produit
+  {id:'produit', bot:"Quel type de couverture vous am\u00e8ne aujourd\u2019hui ?", type:'opts',
+    opts:d=>d.profil==='Particulier'?['Auto','Habitation','Moto','Mutuelle Sant\u00e9','Cyber Risque','Cycle']:
+         d.profil==='Professionnel'?['Local Professionnel','RC Professionnelle','Flotte Auto','Mutuelle Sant\u00e9','Sant\u00e9 & Pr\u00e9voyance Collective']:
+         ['RC D\u00e9cennale','Flotte Auto','Sant\u00e9 & Pr\u00e9voyance Collective','Cyber Risque','RC Entreprise'],
+    save:'produit', next:d=>{
+      if(['Auto','Moto','Cycle'].includes(d.produit)) return 7; // permis
+      if(d.produit==='Flotte Auto') return 10; // assuré 36 mois
+      if(d.produit==='RC D\u00e9cennale') return 24; // RCD spécifique
+      return 12; // docs spécifiques
+    }},
+  // 7 - Permis
+  {id:'permis', bot:"Pour affiner les offres, j\u2019ai besoin de quelques infos sur votre situation de conducteur. Quelle est la date d\u2019obtention de votre permis ?", type:'date', save:'date_permis', next:()=>8},
+  // 8 - Véhicule
+  {id:'vehicule', bot:"Quel v\u00e9hicule souhaitez-vous assurer ? (marque et mod\u00e8le)", type:'input', ph:'Ex : Peugeot 308', save:'vehicule', next:()=>9},
+  // 9 - Immatriculation
+  {id:'immat', bot:"Et son immatriculation ?", type:'immat', save:'immatriculation', next:()=>10},
+  // 10 - Assuré 36 mois
+  {id:'assure', bot:"Avez-vous \u00e9t\u00e9 assur\u00e9(e) au cours des 36 derniers mois ? Cela impacte directement votre tarif.", type:'opts', opts:['Oui','Non'], save:'assure_36mois',
+    next:d=>{if(d.assure_36mois==='Non'){D.bonus_malus='Sans bonus ni malus';D._skip_contrat_auto=true;return 12;}return 11;}},
+  // 11 - RI (Relevé d'Information)
+  {id:'ri', bot:"Votre Relev\u00e9 d\u2019Information permettra \u00e0 l\u2019expert de vous proposer une offre encore plus pr\u00e9cise. Vous pouvez le d\u00e9poser ici.", type:'upload', accept:'.pdf,.jpg,.jpeg,.png', save:'fichier_ri', save_url:'fichier_ri_url', optional:true, level:'red', skipText:'Passer (fortement d\u00e9conseill\u00e9)', next:()=>12},
+  // 12 - Documents spécifiques (multi-upload)
+  {id:'docs', bot:d=>{const ds=DOCS_SPECIFIQUES[d.produit];return ds?'Documents utiles pour votre dossier ('+ds+'). Vous pouvez d\u00e9poser plusieurs fichiers.':'Avez-vous des documents utiles \u00e0 joindre ? Vous pouvez en d\u00e9poser plusieurs.';}, type:'multi_upload', accept:'.pdf,.jpg,.jpeg,.png,.doc,.docx', save:'docs_utiles', save_url:'docs_utiles_url', optional:true, next:()=>13},
+  // 13 - Contrat en cours/précédent (niveau adaptatif)
+  {id:'contrat', bot:d=>{const c=CONTRAT_LEVELS[d.produit];return c?c.text:'Avez-vous un contrat en cours ou pr\u00e9c\u00e9dent \u00e0 joindre ?';}, type:'upload', accept:'.pdf,.jpg,.jpeg,.png', save:'contrat_precedent', save_url:'contrat_precedent_url', optional:true, level_fn:d=>{const c=CONTRAT_LEVELS[d.produit];return c?c.level:'neutral';}, skipText_fn:d=>{const c=CONTRAT_LEVELS[d.produit];return c?c.skip:'Passer cette \u00e9tape';}, next:()=>14},
+  // 14 - Situation (adaptée par produit)
+  {id:'situation', bot:d=>{const m={
+    'Auto':'Quelques mots sur votre situation de conducteur ou vos attentes ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.',
+    'Moto':'Quelques mots sur votre exp\u00e9rience moto ou vos attentes ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.',
+    'Cycle':'Quelques mots sur votre utilisation du v\u00e9lo ou vos attentes ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.',
+    'Flotte Auto':'Quelques mots sur votre flotte ou vos besoins sp\u00e9cifiques ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.',
+    'Habitation':'Quelques mots sur votre logement ou vos attentes ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.',
+    'Local Professionnel':'Quelques mots sur votre local ou votre activit\u00e9 ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.',
+    'RC Professionnelle':'Quelques mots sur votre activit\u00e9 ou vos besoins en RC Pro ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.',
+    'RC Entreprise':'Quelques mots sur votre entreprise ou vos besoins en couverture ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.',
+    'RC D\u00e9cennale':'Quelques mots sur vos chantiers ou votre activit\u00e9 ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.',
+    'Mutuelle Sant\u00e9':'Quelques mots sur vos besoins en sant\u00e9 ou vos attentes ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.',
+    'Sant\u00e9 & Pr\u00e9voyance Collective':'Quelques mots sur votre effectif ou vos besoins en couverture collective ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.',
+    'Cyber Risque':'Quelques mots sur votre infrastructure IT ou vos pr\u00e9occupations cyber ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.'
+  };return m[d.produit]||'Quelques mots sur votre situation ou vos attentes particuli\u00e8res ? Cela permettra \u00e0 l\u2019expert de personnaliser son retour.';}, type:'textarea', ph_fn:d=>{const p={
+    'Auto':'Ex : Premi\u00e8re assurance, conducteur secondaire, tarif comp\u00e9titif...',
+    'Moto':'Ex : Usage quotidien, roadster, hivernage, tarif...',
+    'Cycle':'Ex : VAE, vol fr\u00e9quent, usage urbain...',
+    'Flotte Auto':'Ex : 12 v\u00e9hicules, usage mixte pro/perso, sinistres r\u00e9cents...',
+    'Habitation':'Ex : Appartement T3, locataire, d\u00e9pendances...',
+    'Local Professionnel':'Ex : Bureau 80m\u00b2, stock marchandises, ERP...',
+    'RC Professionnelle':'Ex : Consultant IT, CA 200k\u20ac, missions \u00e0 l\u2019\u00e9tranger...',
+    'RC Entreprise':'Ex : PME 15 salari\u00e9s, BTP, sous-traitance...',
+    'RC D\u00e9cennale':'Ex : Ma\u00e7onnerie, CA 500k\u20ac, 3 sinistres en 5 ans...',
+    'Mutuelle Sant\u00e9':'Ex : Famille 4 personnes, optique importante, dentaire...',
+    'Sant\u00e9 & Pr\u00e9voyance Collective':'Ex : 20 salari\u00e9s, convention Syntec, pr\u00e9voyance d\u00e9c\u00e8s...',
+    'Cyber Risque':'Ex : E-commerce, donn\u00e9es clients, t\u00e9l\u00e9travail...'
+  };return p[d.produit]||'Ex : Premi\u00e8re assurance, tarif comp\u00e9titif...';}, save:'situation', next:d=>{if(isExistingClient){return D.date_naissance?25:22;}return 15;}},
+  // 15 - Intro coordonnées (personnalisé avec prénom)
+  {id:'intro_coord', bot:d=>'Presque termin\u00e9 '+d.prenom+' \ud83d\ude4c Il ne reste plus qu\u2019\u00e0 confirmer vos coordonn\u00e9es.', type:'opts', opts:['Continuer'], next:()=>16},
+  // 16 - Confirmation prénom
+  {id:'confirm_prenom', bot:d=>d.prenom+', je vais avoir besoin de vos coordonn\u00e9es compl\u00e8tes. Votre pr\u00e9nom est bien '+d.prenom+' ?', type:'opts', opts:['Oui, c\u2019est \u00e7a','Non, le corriger'], save:'_confirm_prenom', next:d=>{if(d._confirm_prenom==='Oui, c\u2019est \u00e7a') return 18; return 17;}},
+  // 17 - Correction prénom
+  {id:'correct_prenom', bot:"Pas de souci, quel est votre pr\u00e9nom ?", type:'input', ph:'Votre pr\u00e9nom', save:'prenom', capitalize:true, next:()=>18},
+  // 18 - Nom
+  {id:'nom', bot:d=>'Et votre nom de famille, '+d.prenom+' ?', type:'input', ph:'Ex : Dupont', save:'nom', capitalize:true, next:()=>19},
+  // 19 - Email
+  {id:'email', bot:"Quelle adresse email pour vous envoyer la confirmation de votre demande ?", type:'input', ph:'Ex : sophie.dupont@email.fr', save:'email', validate:'email', lowercase:true, next:()=>20},
+  // 20 - Téléphone (+33)
+  {id:'tel', bot:"Sur quel num\u00e9ro l\u2019expert peut-il vous joindre ?", type:'phone', save:'telephone', next:()=>21},
+  // 21 - Adresse
+  {id:'adresse', bot:"Votre adresse de r\u00e9sidence principale ? Tapez les premiers caract\u00e8res, je compl\u00e8te automatiquement.", type:'address', save:'adresse', save_cp:'code_postal', save_ville:'ville', next:()=>22},
+  // 22 - Date de naissance
+  {id:'ddn', bot:"Votre date de naissance ? (n\u00e9cessaire pour \u00e9tablir le devis)", type:'date', save:'date_naissance', next:d=>['Professionnel','Entreprise'].includes(d.profil)?23:25},
+  // 23 - SIRET
+  {id:'siret', bot:"Le num\u00e9ro SIRET de votre structure ?", type:'input', ph:'Ex : 123 456 789 00012', save:'siret', next:()=>25},
+  // 24 - RC Décennale spécifique : déjà assuré ?
+  {id:'rcd_assure', bot:"Avez-vous d\u00e9j\u00e0 \u00e9t\u00e9 assur\u00e9 en RC D\u00e9cennale ?", type:'opts', opts:['Oui','Non'], save:'rcd_deja_assure', next:()=>12},
+  // 25 - Préférence contact
+  {id:'contact_pref', bot:"Derni\u00e8re question \u2014 vous pr\u00e9f\u00e9rez qu\u2019on vous contacte par... ?", type:'opts', opts:['T\u00e9l\u00e9phone','Email'], save:'contact_pref', next:()=>26},
+  // 26 - Recap
+  {id:'recap', type:'recap', next:()=>27},
+  // 27 - Done
+  {id:'done', type:'done'}
+];
+
+const TOTAL = S.length;
+function gv(f) { return typeof f === 'function' ? f(D) : f; }
+
+/* ── DOM helpers ── */
+async function botMsg(txt, delay=0) {
+  return new Promise(res => { setTimeout(() => {
+    const ti = document.getElementById('typ'); if (ti) ti.remove();
+    const m = document.getElementById('msgs'), el = document.createElement('div');
+    el.className = 'msg bot';
+    const avDiv = document.createElement('div'); avDiv.className = 'av-bubble';
+    const avInner = document.createElement('div'); avInner.className = 'av-bubble-lottie';
+    avDiv.appendChild(avInner); createBubbleLottie(avInner); el.appendChild(avDiv);
+    const bub = document.createElement('div'); bub.className = 'bub'; bub.innerHTML = txt;
+    el.appendChild(bub); m.appendChild(el); m.scrollTop = m.scrollHeight; res();
+  }, delay); });
+}
+
+function showTyping(delay=0) {
+  return new Promise(res => { setTimeout(() => {
+    const m = document.getElementById('msgs'), el = document.createElement('div');
+    el.className = 'msg bot'; el.id = 'typ';
+    const avDiv = document.createElement('div'); avDiv.className = 'av-bubble';
+    const avInner = document.createElement('div'); avInner.className = 'av-bubble-lottie';
+    avDiv.appendChild(avInner); createBubbleLottie(avInner); el.appendChild(avDiv);
+    const bub = document.createElement('div'); bub.className = 'bub';
+    bub.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+    el.appendChild(bub); m.appendChild(el); m.scrollTop = m.scrollHeight; res();
+  }, delay); });
+}
+
+async function userMsg(txt) {
+  const ti = document.getElementById('typ'); if (ti) ti.remove();
+  const m = document.getElementById('msgs'), el = document.createElement('div');
+  el.className = 'msg user'; el.innerHTML = '<div class="bub">' + txt + '</div>';
+  m.appendChild(el); m.scrollTop = m.scrollHeight;
+}
+
+function clearUI() {
+  document.getElementById('opts-zone').innerHTML = '';
+  document.getElementById('inp-zone').innerHTML = '';
+  document.getElementById('inp-zone').classList.add('hidden');
+  document.getElementById('uz-zone').innerHTML = '';
+  document.getElementById('uz-zone').classList.add('hidden');
+  setAlexState('idle');
+}
+
+function setProg(idx) {
+  document.getElementById('prog').style.width = Math.max(3, Math.min(97, Math.round(idx / TOTAL * 100))) + '%';
+  const bb = document.getElementById('back-btn');
+  history.length > 0 && idx > 0 && S[idx] && S[idx].type !== 'done' ? bb.classList.remove('hidden') : bb.classList.add('hidden');
+}
+
+/* ── Back ── */
+document.getElementById('back-btn').onclick = () => {
+  if (!history.length) return;
+  const prev = history.pop();
+  const msgs = document.getElementById('msgs');
+  const ub = msgs.querySelectorAll('.msg.user'); if (ub.length) ub[ub.length-1].remove();
+  const bb = msgs.querySelectorAll('.msg.bot'); if (bb.length) bb[bb.length-1].remove();
+  const s = S[prev];
+  if (s && s.save) delete D[s.save];
+  if (s && s.save_url) delete D[s.save_url];
+  if (s && s.save_cp) delete D[s.save_cp];
+  if (s && s.save_ville) delete D[s.save_ville];
+  clearUI(); runStep(prev, true);
+};
+
+/* ── Masks ── */
+function applyDateMask(inp) {
+  inp.setAttribute('maxlength','10'); inp.setAttribute('inputmode','numeric');
+  inp.addEventListener('input', function() {
+    let v = this.value.replace(/\D/g,''); if (v.length > 8) v = v.slice(0,8);
+    let out = '';
+    if (v.length > 4) out = v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4);
+    else if (v.length > 2) out = v.slice(0,2)+'/'+v.slice(2);
+    else out = v;
+    this.value = out;
+  });
+}
+
+function applyImmatMask(inp) {
+  inp.setAttribute('maxlength','9'); inp.setAttribute('autocomplete','off');
+  inp.addEventListener('input', function() {
+    let raw = this.value.replace(/[^A-Z0-9]/gi,'').toUpperCase(); if (raw.length > 7) raw = raw.slice(0,7);
+    let out = '';
+    if (raw.length <= 2) out = raw;
+    else if (raw.length <= 5) out = raw.slice(0,2)+'-'+raw.slice(2);
+    else out = raw.slice(0,2)+'-'+raw.slice(2,5)+'-'+raw.slice(5);
+    this.value = out;
+    const valid = /^[A-Z]{2}-\d{3}-[A-Z]{2}$/.test(out);
+    inp.classList.toggle('immat-valid', valid);
+    inp.classList.toggle('immat-invalid', out.length === 9 && !valid);
+    const btn = inp.parentNode.querySelector('.sb'); if (btn) btn.disabled = !valid;
+  });
+}
+
+/* ── Phone mask : format +33XXXXXXXXX ── */
+function applyPhoneMask(inp) {
+  inp.setAttribute('maxlength','12'); inp.setAttribute('inputmode','tel');
+  inp.value = '+33';
+  inp.addEventListener('input', function() {
+    let raw = this.value.replace(/[^\d+]/g,'');
+    // Si l'utilisateur efface le +33
+    if (!raw.startsWith('+33')) {
+      // Essayer de récupérer les chiffres
+      let digits = raw.replace(/\D/g,'');
+      // Si commence par 33, garder
+      if (digits.startsWith('33')) digits = digits;
+      // Si commence par 0, remplacer par 33
+      else if (digits.startsWith('0')) digits = '33' + digits.slice(1);
+      raw = '+' + digits;
+    }
+    // Limiter à +33 + 9 chiffres = 12 chars
+    if (raw.length > 12) raw = raw.slice(0, 12);
+    this.value = raw;
+    const valid = /^\+33[0-9]{9}$/.test(raw);
+    inp.classList.toggle('phone-valid', valid);
+    inp.classList.toggle('phone-invalid', raw.length >= 12 && !valid);
+    const btn = inp.parentNode.querySelector('.sb'); if (btn) btn.disabled = !valid;
+  });
+  // Empêcher de supprimer +33
+  inp.addEventListener('keydown', function(e) {
+    if ((e.key === 'Backspace' || e.key === 'Delete') && this.selectionStart <= 3) {
+      e.preventDefault();
+    }
+  });
+  inp.addEventListener('focus', function() {
+    if (this.selectionStart < 3) this.setSelectionRange(3, 3);
+  });
+  inp.addEventListener('click', function() {
+    if (this.selectionStart < 3) this.setSelectionRange(3, 3);
+  });
+}
+
+/* ── Address autocomplete ── */
+let addrTimer = null;
+function showAddress(cb) {
+  const z = document.getElementById('inp-zone'); z.classList.remove('hidden');
+  const hint = document.createElement('div'); hint.className = 'inp-hint';
+  hint.innerHTML = '<i class="ti ti-map-pin"></i> Saisissez votre adresse \u2014 s\u00e9lectionnez une suggestion';
+  const row = document.createElement('div'); row.className = 'inp-row'; row.style.position = 'relative';
+  const inp = document.createElement('input'); inp.className = 'ci'; inp.placeholder = 'Ex : 12 rue des Lilas 75011'; inp.setAttribute('autocomplete','off');
+  const btn = document.createElement('button'); btn.className = 'sb'; btn.setAttribute('aria-label','Valider'); btn.innerHTML = '<i class="ti ti-arrow-right"></i>';
+  const sugg = document.createElement('div'); sugg.className = 'addr-suggestions hidden';
+  const sub = () => { const v = inp.value.trim(); if (!v) return; sugg.classList.add('hidden'); clearUI(); cb(v, null, null); };
+  btn.onclick = sub;
+  inp.onkeydown = e => { if (e.key==='Enter'){e.preventDefault();sub();} if(e.key==='Escape')sugg.classList.add('hidden'); if(e.key==='ArrowDown'){e.preventDefault();const it=sugg.querySelectorAll('.addr-item');if(it.length)it[0].focus();} };
+  inp.oninput = () => {
+    clearTimeout(addrTimer); const q = inp.value.trim();
+    if (q.length < 3) { sugg.classList.add('hidden'); return; }
+    addrTimer = setTimeout(async () => {
+      try {
+        let feats = [];
+        const r = await fetch('https://api-adresse.data.gouv.fr/search/?q='+encodeURIComponent(q)+'&limit=5&type=housenumber');
+        const data = await r.json(); feats = data.features || [];
+        if (!feats.length) { const r2 = await fetch('https://api-adresse.data.gouv.fr/search/?q='+encodeURIComponent(q)+'&limit=5'); const d2 = await r2.json(); feats = d2.features || []; }
+        sugg.innerHTML = '';
+        if (!feats.length) { sugg.classList.add('hidden'); return; }
+        feats.forEach(f => {
+          const p = f.properties, label = p.label||'', cp = p.postcode||'', city = p.city||'', street = p.name||'';
+          const item = document.createElement('div'); item.className = 'addr-item'; item.setAttribute('role','option'); item.setAttribute('tabindex','0');
+          item.innerHTML = '<div class="addr-main">'+street+'</div><div class="addr-sub">'+cp+' '+city+'</div>';
+          const select = () => { inp.value = label; sugg.classList.add('hidden'); clearUI(); cb(label, cp, city); };
+          item.onclick = select;
+          item.onkeydown = e => { if(e.key==='Enter'||e.key===' '){e.preventDefault();select();} if(e.key==='ArrowDown'){e.preventDefault();const nx=item.nextElementSibling;if(nx)nx.focus();} if(e.key==='ArrowUp'){e.preventDefault();const pv=item.previousElementSibling;if(pv)pv.focus();else inp.focus();} if(e.key==='Escape'){sugg.classList.add('hidden');inp.focus();} };
+          sugg.appendChild(item);
+        });
+        sugg.classList.remove('hidden');
+      } catch(e) { sugg.classList.add('hidden'); }
+    }, 300);
+  };
+  document.addEventListener('click', function h(e) { if (!row.contains(e.target)) { sugg.classList.add('hidden'); document.removeEventListener('click', h); } });
+  row.appendChild(inp); row.appendChild(btn); row.appendChild(sugg);
+  z.appendChild(hint); z.appendChild(row);
+  setTimeout(() => inp.focus(), 80);
+}
+
+/* ── Input renderers ── */
+function showOpts(opts, cb) {
+  const z = document.getElementById('opts-zone'); z.innerHTML = '';
+  opts.forEach(o => {
+    const b = document.createElement('button'); b.className = 'opt'; b.textContent = o;
+    b.onclick = () => { z.querySelectorAll('.opt').forEach(x => x.disabled = true); b.classList.add('sel'); setTimeout(() => { clearUI(); cb(o); }, 180); };
+    z.appendChild(b);
+  });
+}
+
+function showInput(ph, cb, isTA=false, validate=null) {
+  const z = document.getElementById('inp-zone'); z.classList.remove('hidden');
+  const hint = document.createElement('div'); hint.className = 'inp-hint'; hint.innerHTML = '<i class="ti ti-corner-down-left"></i> Entr\u00e9e pour continuer';
+  const row = document.createElement('div'); row.className = 'inp-row';
+  let inp;
+  if (isTA) { inp = document.createElement('textarea'); inp.className = 'ci tall'; inp.rows = 3; inp.placeholder = ph; inp.onkeydown = e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sub();} }; }
+  else { inp = document.createElement('input'); inp.className = 'ci'; inp.placeholder = ph; inp.onkeydown = e => { if(e.key==='Enter') sub(); }; }
+  const btn = document.createElement('button'); btn.className = 'sb'; btn.setAttribute('aria-label','Envoyer'); btn.innerHTML = '<i class="ti ti-arrow-right"></i>';
+  const errEl = document.createElement('div'); errEl.style.cssText = 'font-size:11px;color:var(--red);margin-top:2px;display:none';
+  const sub = () => {
+    const v = inp.value.trim(); if (!v) return;
+    if (validate === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+      errEl.textContent = 'Adresse email invalide'; errEl.style.display = 'block'; return;
+    }
+    if (validate === 'textarea') {
+      const contentErr = validateTextContent(v);
+      if (contentErr) { errEl.textContent = contentErr; errEl.style.display = 'block'; return; }
+    }
+    errEl.style.display = 'none'; clearUI(); cb(v);
+  };
+  btn.onclick = sub; row.appendChild(inp); row.appendChild(btn);
+  z.appendChild(hint); z.appendChild(row); z.appendChild(errEl);
+  setTimeout(() => inp.focus(), 80);
+}
+
+function showPhoneInput(cb) {
+  const z = document.getElementById('inp-zone'); z.classList.remove('hidden');
+  const hint = document.createElement('div'); hint.className = 'inp-hint'; hint.innerHTML = '<i class="ti ti-phone"></i> Format : +33XXXXXXXXX';
+  const row = document.createElement('div'); row.className = 'inp-row';
+  const inp = document.createElement('input'); inp.className = 'ci'; inp.setAttribute('inputmode','tel');
+  applyPhoneMask(inp);
+  const btn = document.createElement('button'); btn.className = 'sb'; btn.setAttribute('aria-label','Valider'); btn.innerHTML = '<i class="ti ti-arrow-right"></i>'; btn.disabled = true;
+  const sub = () => { const v = inp.value.trim(); if (!/^\+33[0-9]{9}$/.test(v)) return; clearUI(); cb(v); };
+  btn.onclick = sub; inp.onkeydown = e => { if(e.key==='Enter') sub(); };
+  row.appendChild(inp); row.appendChild(btn);
+  const phoneHint = document.createElement('div'); phoneHint.className = 'phone-hint'; phoneHint.textContent = 'Ex : +33612345678';
+  z.appendChild(hint); z.appendChild(row); z.appendChild(phoneHint);
+  setTimeout(() => { inp.focus(); inp.setSelectionRange(3,3); }, 80);
+}
+
+function showDateInput(cb, dateType) {
+  const z = document.getElementById('inp-zone'); z.classList.remove('hidden');
+  const hint = document.createElement('div'); hint.className = 'inp-hint'; hint.innerHTML = '<i class="ti ti-corner-down-left"></i> Format jj/mm/aaaa';
+  const row = document.createElement('div'); row.className = 'inp-row';
+  const inp = document.createElement('input'); inp.className = 'ci'; inp.placeholder = 'jj/mm/aaaa'; applyDateMask(inp);
+  const btn = document.createElement('button'); btn.className = 'sb'; btn.setAttribute('aria-label','Valider'); btn.innerHTML = '<i class="ti ti-arrow-right"></i>';
+  const errEl = document.createElement('div'); errEl.style.cssText = 'font-size:11px;color:var(--red);margin-top:2px;display:none';
+  const sub = () => {
+    const v = inp.value.trim(); if (!v || v.length < 10) return;
+    const err = validateDate(v, dateType || null);
+    if (err) { errEl.textContent = err; errEl.style.display = 'block'; return; }
+    errEl.style.display = 'none'; clearUI(); cb(v);
+  };
+  btn.onclick = sub; inp.onkeydown = e => { if(e.key==='Enter') sub(); };
+  row.appendChild(inp); row.appendChild(btn); z.appendChild(hint); z.appendChild(row); z.appendChild(errEl);
+  setTimeout(() => inp.focus(), 80);
+}
+
+function showImmat(cb) {
+  const z = document.getElementById('inp-zone'); z.classList.remove('hidden');
+  const hint = document.createElement('div'); hint.className = 'inp-hint'; hint.innerHTML = '<i class="ti ti-corner-down-left"></i> Format AA-000-BB \u2014 les tirets sont automatiques';
+  const row = document.createElement('div'); row.className = 'inp-row';
+  const inp = document.createElement('input'); inp.className = 'ci immat'; inp.placeholder = 'AA-000-BB'; applyImmatMask(inp);
+  const btn = document.createElement('button'); btn.className = 'sb'; btn.setAttribute('aria-label','Valider'); btn.innerHTML = '<i class="ti ti-arrow-right"></i>'; btn.disabled = true;
+  const sub = () => { const v = inp.value.trim(); if (!/^[A-Z]{2}-\d{3}-[A-Z]{2}$/.test(v)) return; clearUI(); cb(v); };
+  btn.onclick = sub; inp.onkeydown = e => { if(e.key==='Enter') sub(); };
+  row.appendChild(inp); row.appendChild(btn); z.appendChild(hint); z.appendChild(row);
+  setTimeout(() => inp.focus(), 80);
+}
+
+/* ── Upload simple (RI, contrat) ── */
+function showUpload(accept, save, saveUrl, optional, cb, level, skipText) {
+  const z = document.getElementById('uz-zone'); z.classList.remove('hidden');
+
+  // Bandeau niveau
+  if (level && level !== 'neutral') {
+    const lvl = document.createElement('div');
+    lvl.className = 'uz-level ' + level;
+    lvl.textContent = '\ud83d\udfe1 Recommand\u00e9';
+    z.appendChild(lvl);
+  }
+
+  const uz = document.createElement('div'); uz.className = 'upload-zone';
+  const uzId = 'uz-' + save;
+  uz.innerHTML = '<input type="file" accept="'+accept+'" id="'+uzId+'">' +
+    '<div class="uz-icon"><i class="ti ti-upload"></i></div>' +
+    '<div class="uz-text">Cliquez ou glissez un fichier ici<br><span style="font-size:11px;opacity:.7">JPG, PDF \u00b7 max 10 Mo</span></div>' +
+    '<div class="uz-fname" id="uzn-'+save+'"></div>' +
+    '<div class="uz-progress" id="uzp-'+save+'"><div class="uz-progress-bar" id="uzpb-'+save+'"></div></div>' +
+    '<div class="uz-url" id="uzu-'+save+'"></div>';
+  z.appendChild(uz);
+
+  if (optional) {
+    const sk = document.createElement('span');
+    sk.className = 'skip-lnk' + (level === 'red' ? ' red' : level === 'orange' ? ' orange' : '');
+    sk.textContent = skipText || 'Passer cette \u00e9tape \u2192';
+    sk.onclick = () => { D[save] = '(non fourni)'; if(saveUrl) D[saveUrl] = null; clearUI(); cb('(non fourni)', null); };
+    z.appendChild(sk);
+  }
+
+  document.getElementById(uzId).onchange = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    document.getElementById('uzn-'+save).textContent = file.name;
+    const prog = document.getElementById('uzp-'+save);
+    const progBar = document.getElementById('uzpb-'+save);
+    prog.classList.add('active');
+
+    try {
+      const url = await uploadFile(file, (pct) => { progBar.style.width = pct + '%'; });
+      prog.classList.remove('active');
+      progBar.style.width = '100%';
+      const urlEl = document.getElementById('uzu-'+save);
+      urlEl.textContent = '\u2713 Fichier d\u00e9pos\u00e9';
+      urlEl.style.display = 'block';
+      D[save] = file.name;
+      if (saveUrl) D[saveUrl] = url;
+      setTimeout(() => { clearUI(); cb(file.name, url); }, 600);
+    } catch(err) {
+      prog.classList.remove('active');
+      document.getElementById('uzn-'+save).textContent = '\u26a0 Erreur upload \u2014 r\u00e9essayez';
+      document.getElementById('uzn-'+save).style.color = 'var(--red)';
+      console.error('Upload error:', err);
+    }
+  };
+}
+
+/* ── Multi-upload (documents utiles) — avec confirmation ── */
+function showMultiUpload(accept, save, saveUrl, optional, cb) {
+  const z = document.getElementById('uz-zone'); z.classList.remove('hidden');
+  const uploadedFiles = []; // {name, url}
+
+  const uz = document.createElement('div'); uz.className = 'upload-zone';
+  const uzId = 'uz-' + save;
+  uz.innerHTML = '<input type="file" accept="'+accept+'" id="'+uzId+'" multiple>' +
+    '<div class="uz-icon"><i class="ti ti-upload"></i></div>' +
+    '<div class="uz-text">Cliquez ou glissez un ou plusieurs fichiers<br><span style="font-size:11px;opacity:.7">JPG, PDF, DOC \u00b7 max 10 Mo / fichier</span></div>' +
+    '<div class="multi-files" id="mf-'+save+'"></div>' +
+    '<div class="uz-progress" id="uzp-'+save+'"><div class="uz-progress-bar" id="uzpb-'+save+'"></div></div>';
+  z.appendChild(uz);
+
+  // Zone de confirmation (cachée au départ)
+  const confirmRow = document.createElement('div'); confirmRow.className = 'multi-confirm-row'; confirmRow.id = 'mc-'+save; confirmRow.style.display = 'none';
+  const btnAdd = document.createElement('button'); btnAdd.className = 'multi-confirm-btn'; btnAdd.textContent = '+ Ajouter un autre fichier';
+  const btnDone = document.createElement('button'); btnDone.className = 'multi-confirm-btn primary'; btnDone.textContent = 'Confirmer et continuer \u2192';
+  confirmRow.appendChild(btnAdd); confirmRow.appendChild(btnDone);
+  z.appendChild(confirmRow);
+
+  if (optional) {
+    const sk = document.createElement('span'); sk.className = 'skip-lnk'; sk.textContent = 'Passer cette \u00e9tape \u2192'; sk.id = 'sk-'+save;
+    sk.onclick = () => { D[save] = '(non fourni)'; if(saveUrl) D[saveUrl] = null; clearUI(); cb('(non fourni)', null); };
+    z.appendChild(sk);
+  }
+
+  function updateConfirmUI() {
+    const mc = document.getElementById('mc-'+save);
+    const sk = document.getElementById('sk-'+save);
+    if (uploadedFiles.length > 0) {
+      mc.style.display = 'flex';
+      if (sk) sk.style.display = 'none';
+    }
+  }
+
+  async function handleFiles(files) {
+    const prog = document.getElementById('uzp-'+save);
+    const progBar = document.getElementById('uzpb-'+save);
+    const mfZone = document.getElementById('mf-'+save);
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      prog.classList.add('active');
+      progBar.style.width = '0%';
+      try {
+        const url = await uploadFile(file, (pct) => { progBar.style.width = pct + '%'; });
+        uploadedFiles.push({name: file.name, url});
+        const item = document.createElement('div'); item.className = 'multi-file-item';
+        item.innerHTML = '<i class="ti ti-check"></i> ' + file.name;
+        mfZone.appendChild(item);
+      } catch(err) {
+        const item = document.createElement('div'); item.className = 'multi-file-item';
+        item.innerHTML = '<span style="color:var(--red)">\u26a0 ' + file.name + ' (erreur)</span>';
+        mfZone.appendChild(item);
+        console.error('Upload error:', err);
+      }
+    }
+    prog.classList.remove('active');
+    progBar.style.width = '100%';
+    updateConfirmUI();
+  }
+
+  document.getElementById(uzId).onchange = (e) => {
+    const files = e.target.files; if (!files.length) return;
+    handleFiles(files);
+  };
+
+  btnAdd.onclick = () => { document.getElementById(uzId).click(); };
+  btnDone.onclick = () => {
+    const names = uploadedFiles.map(f => f.name).join(', ');
+    D[save] = names;
+    if (saveUrl) D[saveUrl] = uploadedFiles.map(f => f.url);
+    clearUI();
+    cb(names, D[saveUrl]);
+  };
+}
+
+/* ── Recap ── */
+function buildRecap() {
+  const secs = [
+    {lbl:'Votre projet', keys:[
+      {k:'profil',l:'Profil'},{k:'produit',l:'Assurance'},{k:'date_permis',l:'Permis'},
+      {k:'vehicule',l:'V\u00e9hicule'},{k:'immatriculation',l:'Immatriculation'},
+      {k:'assure_36mois',l:'Assur\u00e9 36 mois'},{k:'rcd_deja_assure',l:'RC D\u00e9c. assur\u00e9'},
+      {k:'bonus_malus',l:'Bonus/Malus'},
+      {k:'fichier_ri',l:"Relev\u00e9 d'info"},{k:'docs_utiles',l:'Documents'},
+      {k:'contrat_precedent',l:'Contrat pr\u00e9c\u00e9dent'},
+      {k:'situation',l:'Situation',block:true}
+    ]},
+    {lbl:'Coordonn\u00e9es', keys:[
+      {k:'prenom',l:'Pr\u00e9nom'},{k:'nom',l:'Nom'},
+      {k:'email',l:'Email'},{k:'telephone',l:'T\u00e9l\u00e9phone'},{k:'adresse',l:'Adresse'},
+      {k:'date_naissance',l:'Date de naissance'},{k:'siret',l:'SIRET'},
+      {k:'contact_pref',l:'Contact pr\u00e9f\u00e9r\u00e9'}
+    ]}
+  ];
+  let html = '<div class="rc">';
+  secs.forEach(sec => {
+    const rows = sec.keys.filter(({k}) => D[k] && D[k] !== '(non fourni)');
+    if (!rows.length) return;
+    html += '<div class="rc-sec-lbl">'+sec.lbl+'</div>';
+    rows.forEach(({k,l,block}) => {
+      if (block) html += '<div class="rr rr-block"><span class="rl">'+l+'</span><span class="rv-block">"'+D[k]+'"</span></div>';
+      else html += '<div class="rr"><span class="rl">'+l+'</span><span class="rv">'+D[k]+'</span></div>';
+    });
+  });
+  return html + '</div>';
+}
+
+/* ── Envoi webhook Make ── */
+async function sendToMake() {
+  const payload = {
+    profil: D.profil || null,
+    produit: D.produit || null,
+    date_permis: D.date_permis || null,
+    vehicule: D.vehicule || null,
+    immatriculation: D.immatriculation || null,
+    assure_36mois: D.assure_36mois || null,
+    bonus_malus: D.bonus_malus || null,
+    rcd_deja_assure: D.rcd_deja_assure || null,
+    fichier_ri: D.fichier_ri || null,
+    fichier_ri_url: D.fichier_ri_url || null,
+    docs_utiles: D.docs_utiles || null,
+    docs_utiles_url: Array.isArray(D.docs_utiles_url) ? D.docs_utiles_url : [],
+    contrat_precedent: D.contrat_precedent || null,
+    contrat_precedent_url: D.contrat_precedent_url ? [D.contrat_precedent_url] : [],
+    situation: D.situation || null,
+    prenom: D.prenom || null,
+    nom: D.nom || null,
+    email: D.email || null,
+    telephone: D.telephone || null,
+    adresse: D.adresse || null,
+    code_postal: D.code_postal || null,
+    ville: D.ville || null,
+    date_naissance: D.date_naissance || null,
+    siret: D.siret || null,
+    contact_pref: D.contact_pref || null,
+    _deja_client: D._deja_client || null,
+    _lookup_email: D._lookup_email || null,
+    source: 'Alex Web Public',
+    submitted_at: new Date().toISOString()
+  };
+
+  try {
+    await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    console.log('\u2705 Payload envoy\u00e9 \u00e0 Make:', payload);
+  } catch(err) {
+    console.error('\u274c Webhook error:', err);
+  }
+}
+
+/* ── Validation dates ── */
+function parseDate(str) {
+  // Format jj/mm/aaaa
+  const p = str.split('/');
+  if (p.length !== 3) return null;
+  const d = parseInt(p[0],10), m = parseInt(p[1],10)-1, y = parseInt(p[2],10);
+  const dt = new Date(y, m, d);
+  if (dt.getDate()!==d || dt.getMonth()!==m || dt.getFullYear()!==y) return null;
+  return dt;
+}
+
+function validateDate(val, type) {
+  const dt = parseDate(val);
+  if (!dt) return 'Date invalide (format jj/mm/aaaa)';
+  const now = new Date();
+  const age = now.getFullYear() - dt.getFullYear();
+  if (dt > now) return 'La date ne peut pas \u00eatre dans le futur.';
+  if (type === 'naissance') {
+    if (age > 120 || age < 16) return 'V\u00e9rifiez la date de naissance (entre 16 et 120 ans).';
+  }
+  if (type === 'permis') {
+    if (dt.getFullYear() < 1940) return 'Date de permis trop ancienne.';
+    // Vérifier cohérence avec date de naissance si déjà renseignée
+    if (D.date_naissance) {
+      const nais = parseDate(D.date_naissance);
+      if (nais) {
+        const agePermis = dt.getFullYear() - nais.getFullYear() - ((dt.getMonth() < nais.getMonth() || (dt.getMonth() === nais.getMonth() && dt.getDate() < nais.getDate())) ? 1 : 0);
+        if (agePermis < 17) return 'Incoh\u00e9rence : le permis ne peut pas \u00eatre obtenu avant 17 ans.';
+      }
+    }
+  }
+  if (type === 'naissance' && D.date_permis) {
+    // Vérifier cohérence inverse
+    const permis = parseDate(D.date_permis);
+    if (permis) {
+      const agePermis = permis.getFullYear() - dt.getFullYear() - ((permis.getMonth() < dt.getMonth() || (permis.getMonth() === dt.getMonth() && permis.getDate() < dt.getDate())) ? 1 : 0);
+      if (agePermis < 17) return 'Incoh\u00e9rence : vous auriez eu moins de 17 ans \u00e0 la date du permis indiqu\u00e9e.';
+    }
+  }
+  return null;
+}
+
+/* ── Validation contenu texte libre ── */
+function validateTextContent(text) {
+  const t = text.toLowerCase().trim();
+  // Trop court pour être utile
+  if (t.length < 5) return 'Merci de d\u00e9tailler un peu plus votre r\u00e9ponse pour que l\u2019expert puisse vous aider au mieux.';
+  // Charabia : trop de consonnes consécutives ou touches aléatoires
+  if (/[bcdfghjklmnpqrstvwxz]{6,}/i.test(t) || /(.)\1{4,}/.test(t)) return 'Ce message ne semble pas lisible. Pourriez-vous reformuler en quelques mots ?';
+  // Injures / mots inappropriés (liste non exhaustive, français courant)
+  const badWords = ['merde','putain','connard','connasse','enculer','encul\u00e9','nique','ntm','fdp','pd','salaud','salope','batard','b\u00e2tard','ta gueule','ferme la','casse toi','va te faire'];
+  if (badWords.some(w => t.includes(w))) return 'Merci de rester courtois \ud83d\ude4f Pourriez-vous reformuler votre message ?';
+  // Que des chiffres ou caractères spéciaux
+  if (/^[\d\s\W]+$/.test(t) && !/[a-z\u00e0-\u00ff]/i.test(t)) return 'Merci de d\u00e9crire votre situation en quelques mots.';
+  return null;
+}
+
+/* ── Runner ── */
+async function runStep(idx, isBack=false) {
+  cur = idx; setProg(idx);
+  const s = S[idx]; if (!s) return;
+
+  // Auto-skip contrat étape si "Non" à assuré 36 mois (Auto/Moto/Cycle)
+  if (s.id === 'contrat' && D._skip_contrat_auto && ['Auto','Moto','Cycle'].includes(D.produit)) {
+    D.contrat_precedent = '(non fourni)';
+    D.contrat_precedent_url = null;
+    runStep(s.next(D));
+    return;
+  }
+
+  // ── Type lookup (client existant) ──
+  if (s.type === 'lookup') {
+    setAlexState('thinking');
+    await showTyping(200);
+    await botMsg('Je v\u00e9rifie votre dossier\u2026', 650);
+    setAlexState('idle');
+    const result = await lookupClient(D._lookup_email, D.prenom);
+    if (result && result.found) {
+      isExistingClient = true;
+      // Pré-remplir les données trouvées
+      if (result.nom) D.nom = result.nom;
+      if (result.telephone) D.telephone = result.telephone;
+      if (result.adresse) D.adresse = result.adresse;
+      if (result.code_postal) D.code_postal = result.code_postal;
+      if (result.ville) D.ville = result.ville;
+      if (result.date_naissance) {
+        // Convertir ISO (YYYY-MM-DD) en jj/mm/aaaa si nécessaire
+        const dn = result.date_naissance;
+        if (/^\d{4}-\d{2}-\d{2}/.test(dn)) {
+          const p = dn.split('-'); D.date_naissance = p[2]+'/'+p[1]+'/'+p[0];
+        } else { D.date_naissance = dn; }
+      }
+      if (result.email) D.email = result.email;
+      if (result.profil) D.profil = result.profil;
+      setAlexState('thinking'); await showTyping(200);
+      await botMsg('Parfait, je vous ai retrouv\u00e9(e) \ud83d\ude4c Vos coordonn\u00e9es sont d\u00e9j\u00e0 enregistr\u00e9es.', 650);
+      setAlexState('idle');
+      history.push(idx);
+      runStep(s.next_found(D));
+    } else {
+      setAlexState('thinking'); await showTyping(200);
+      await botMsg('Je ne trouve pas de compte avec cette adresse. Souhaitez-vous r\u00e9essayer ou continuer comme nouveau client ?', 650);
+      setAlexState('idle');
+      showOpts(['R\u00e9essayer','Continuer comme nouveau client'], async choice => {
+        history.push(idx);
+        await userMsg(choice);
+        if (choice === 'R\u00e9essayer') {
+          runStep(s.next_not_found(D));
+        } else {
+          isExistingClient = false;
+          runStep(5); // profil (nouveau prospect)
+        }
+      });
+    }
+    return;
+  }
+
+  if (s.type === 'done') {
+    clearUI();
+    setAlexState('success');
+    // Dynamic thank you page
+    const successEl = document.getElementById('success');
+    successEl.innerHTML = '<div class="sico"><i class="ti ti-circle-check"></i></div>'
+      + '<p style="font-size:16px;font-weight:600;color:var(--tx);margin-bottom:10px">Demande re\u00e7ue ! \u2713</p>'
+      + '<p style="font-size:13.5px;color:var(--tx);margin-bottom:8px">Merci ' + (D.prenom || '') + ' de nous avoir sollicit\u00e9 !</p>'
+      + '<p style="font-size:13px;color:var(--tx2);line-height:1.7">Un expert Easy Courtage Assurance analyse votre dossier et vous recontacte tr\u00e8s rapidement avec une premi\u00e8re \u00e9tude personnalis\u00e9e.</p>'
+      + (D.email ? '<p style="font-size:13px;color:var(--tx2);margin-top:6px">Une confirmation a \u00e9t\u00e9 envoy\u00e9e \u00e0 <strong>' + D.email + '</strong>.</p>' : '')
+      + '<p style="font-size:14px;font-weight:500;color:var(--ci);margin-top:14px">\u00c0 tr\u00e8s vite !</p>';
+    successEl.classList.remove('hidden');
+    document.getElementById('back-btn').classList.add('hidden');
+    document.getElementById('prog').style.width = '100%';
+    await sendToMake();
+    return;
+  }
+
+  if (s.type === 'recap') {
+    setAlexState('thinking');
+    await showTyping(200);
+    await botMsg('Parfait ! Voici un r\u00e9capitulatif complet de votre demande :', 700);
+    setAlexState('idle');
+    setTimeout(() => {
+      const ti = document.getElementById('typ'); if (ti) ti.remove();
+      const m = document.getElementById('msgs'), el = document.createElement('div');
+      el.innerHTML = buildRecap(); m.appendChild(el); m.scrollTop = m.scrollHeight;
+      showOpts(['\u2705 Confirmer et envoyer','\u21a9 Recommencer'], choice => {
+        if (choice.includes('Recommencer')) { Object.keys(D).forEach(k => delete D[k]); history.length = 0; isExistingClient = false; document.getElementById('msgs').innerHTML = ''; runStep(0); }
+        else { userMsg('Confirmer et envoyer').then(() => runStep(S.length - 1)); }
+      });
+    }, 900);
+    return;
+  }
+
+  const bt = gv(s.bot);
+
+  setAlexState('thinking');
+  await showTyping(isBack ? 0 : 200);
+  await botMsg(bt, isBack ? 0 : 650);
+  setAlexState('idle');
+
+  if (s.type === 'opts') { showOpts(gv(s.opts), async choice => { history.push(idx); if(s.save) D[s.save]=choice; await userMsg(choice);
+    // Message de réassurance si "Non" à assuré 36 mois
+    if (s.id === 'assure' && choice === 'Non') {
+      setAlexState('thinking'); await showTyping(200);
+      await botMsg('Pas de probl\u00e8me \u2014 nous prendrons en compte votre profil sans bonus ni malus pour \u00e9tablir l\u2019\u00e9tude. \ud83d\udc4d', 650);
+      setAlexState('idle');
+    }
+    runStep(s.next(D)); }); }
+  else if (s.type === 'input') { showInput(s.ph, async val => {
+    history.push(idx);
+    // Capitalize ou lowercase selon flags
+    if (s.capitalize) val = capitalizeName(val);
+    if (s.lowercase) val = val.toLowerCase().trim();
+    if(s.save) D[s.save]=val;
+    await userMsg(val);
+    // Politesse après prénom_early
+    if (s.id === 'prenom_early') {
+      setAlexState('thinking'); await showTyping(200);
+      await botMsg('Ravie de vous rencontrer ' + D.prenom + ' \ud83d\ude0a', 650);
+      setAlexState('idle');
+    }
+    runStep(s.next(D)); }, false, s.validate||null); }
+  else if (s.type === 'date') { const dtype = s.save==='date_permis'?'permis':s.save==='date_naissance'?'naissance':null; showDateInput(async val => { history.push(idx); if(s.save) D[s.save]=val; await userMsg(val); runStep(s.next(D)); }, dtype); }
+  else if (s.type === 'immat') { showImmat(async val => { history.push(idx); if(s.save) D[s.save]=val; await userMsg(val); runStep(s.next(D)); }); }
+  else if (s.type === 'phone') { showPhoneInput(async val => { history.push(idx); if(s.save) D[s.save]=val; await userMsg(val); runStep(s.next(D)); }); }
+  else if (s.type === 'textarea') { const ph = s.ph_fn ? s.ph_fn(D) : s.ph; showInput(ph, async val => { history.push(idx); if(s.save) D[s.save]=val; await userMsg(val.length>60?val.slice(0,60)+'\u2026':val); runStep(s.next(D)); }, true, 'textarea'); }
+  else if (s.type === 'address') { showAddress(async(label,cp,city) => { history.push(idx); D[s.save]=label; if(cp&&s.save_cp)D[s.save_cp]=cp; if(city&&s.save_ville)D[s.save_ville]=city; await userMsg(label); runStep(s.next(D)); }); }
+  else if (s.type === 'upload') {
+    const level = s.level_fn ? s.level_fn(D) : (s.level || null);
+    const skipText = s.skipText_fn ? s.skipText_fn(D) : (s.skipText || null);
+    showUpload(s.accept, s.save, s.save_url, s.optional, async(fname, url) => {
+      history.push(idx);
+      if (fname !== '(non fourni)') await userMsg('\ud83d\udcce ' + fname + (url ? ' \u2713' : ''));
+      else await userMsg('Passer cette \u00e9tape');
+      runStep(s.next(D));
+    }, level, skipText);
+  }
+  else if (s.type === 'multi_upload') {
+    showMultiUpload(s.accept, s.save, s.save_url, s.optional, async(names, urls) => {
+      history.push(idx);
+      if (names !== '(non fourni)') {
+        const count = names.split(',').length;
+        await userMsg('\ud83d\udcce ' + count + ' fichier(s) d\u00e9pos\u00e9(s) \u2713');
+      } else {
+        await userMsg('Passer cette \u00e9tape');
+      }
+      runStep(s.next(D));
+    });
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => { initAlex(); runStep(0); });
+</script>
+</body>
+</html>

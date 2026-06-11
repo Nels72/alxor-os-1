@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alex — Demande d'étude Apporteur</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&display=swap');
+    :root {
+      --ci: #1B3A6B; --ci-light: #E8F0FE; --ci-text: #ffffff;
+      --bg: #ffffff; --bg2: #f4f6f8; --bg3: #f0f0f0;
+      --tx: #111827; --tx2: #6b7280; --tx3: #9ca3af;
+      --bd: #e5e7eb; --bd2: #d1d5db; --bd3: #f0f0f0;
+      --green: #10B981; --orange: #F59E0B; --red: #EF4444;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);font-family:'Sora',sans-serif}
+    .cw{max-width:500px;margin:0 auto;padding:1.5rem 1rem 3rem}
+
+    /* ── Header ── */
+    .ch{display:flex;align-items:center;gap:12px;padding:0 0 1.25rem;border-bottom:.5px solid var(--bd3);margin-bottom:1rem}
+    .ch-info .ch-name{font-size:13px;font-weight:600;color:var(--tx)}
+    .ch-info .ch-sub{font-size:11px;color:var(--tx2);margin-top:2px}
+    .ch-state-dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-left:5px;transition:background .3s}
+    .ch-state-dot.thinking{background:var(--orange)}
+    .ch-state-dot.success{background:var(--green)}
+
+    /* ── Avatar Alex ── */
+    .alex-wrap{position:relative;flex-shrink:0}
+    .alex-lottie{width:52px;height:52px;border-radius:50%;overflow:hidden;background:var(--ci);border:2px solid var(--ci-light);transition:border-color .4s;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:22px;font-family:'Sora',sans-serif;flex-shrink:0}
+    .alex-lottie.thinking{border-color:rgba(245,158,11,.5)}
+    .alex-lottie.success{border-color:rgba(16,185,129,.5)}
+
+    /* ── Avatar bulle (petit) ── */
+    .av-bubble{width:28px;height:28px;border-radius:50%;overflow:hidden;background:var(--ci);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px;font-family:'Sora',sans-serif}
+
+    /* ── Progress ── */
+    .prog-row{display:flex;align-items:center;gap:10px;margin-bottom:1.25rem}
+    .back-btn{background:none;border:.5px solid var(--bd);border-radius:20px;padding:4px 10px;font-size:11.5px;font-family:'Sora',sans-serif;color:var(--tx2);cursor:pointer;display:flex;align-items:center;gap:4px;transition:all .15s;white-space:nowrap;flex-shrink:0}
+    .back-btn:hover{color:var(--tx);border-color:var(--bd2)}
+    .back-btn.hidden{visibility:hidden;pointer-events:none}
+    .prog{flex:1;height:2px;background:var(--bg2);border-radius:2px}
+    .prog-bar{height:100%;background:var(--ci);border-radius:2px;transition:width .5s ease}
+
+    /* ── Messages ── */
+    .msgs{display:flex;flex-direction:column;gap:10px;padding-bottom:.75rem;min-height:160px}
+    .msg{display:flex;gap:8px;align-items:flex-end;animation:fu .22s ease}
+    @keyframes fu{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+    .msg.bot{flex-direction:row}.msg.user{flex-direction:row-reverse}
+    .bub{max-width:82%;padding:9px 13px;font-size:13.5px;line-height:1.65}
+    .msg.bot .bub{background:var(--bg2);color:var(--tx);border-radius:4px 14px 14px 14px;border:.5px solid var(--bd3)}
+    .msg.user .bub{background:var(--ci);color:var(--ci-text);border-radius:14px 14px 4px 14px;font-weight:500}
+    .typing{display:flex;gap:4px;align-items:center;height:20px}
+    .typing span{width:5px;height:5px;border-radius:50%;background:var(--tx2);animation:dot 1.2s infinite}
+    .typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+    @keyframes dot{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
+
+    /* ── Options ── */
+    .opts{display:flex;flex-wrap:wrap;gap:7px;padding:0 0 .5rem 36px}
+    .opt{padding:7px 14px;border-radius:20px;border:.5px solid var(--bd);background:var(--bg);color:var(--tx);font-size:12.5px;font-family:'Sora',sans-serif;cursor:pointer;transition:all .12s}
+    .opt:hover{background:var(--bg2)}
+    .opt.sel{background:var(--ci);color:var(--ci-text);border-color:transparent;font-weight:500}
+    .opt.alert-orange{background:#FFF3E0;color:#E65100;border-color:#F59E0B;font-weight:600}
+
+    /* ── Inputs ── */
+    .inp-wrap{display:flex;flex-direction:column;gap:6px;padding:0 0 .5rem 36px}
+    .inp-hint{font-size:11px;color:var(--tx2);display:flex;align-items:center;gap:4px}
+    .inp-row{display:flex;gap:8px;align-items:center;position:relative}
+    .ci{flex:1;padding:9px 13px;border-radius:22px;border:.5px solid var(--bd);background:var(--bg);color:var(--tx);font-size:13.5px;font-family:'Sora',sans-serif;outline:none;transition:border .15s}
+    .ci:focus{border-color:var(--bd2)}
+    .ci.tall{border-radius:12px;resize:none;min-height:75px;padding:10px 13px;width:100%}
+    .ci.immat{letter-spacing:2px;text-transform:uppercase;font-weight:500;text-align:center}
+    .immat-valid{border-color:var(--green)!important}
+    .immat-invalid{border-color:var(--red)!important}
+    .sb{width:34px;height:34px;border-radius:50%;border:none;background:var(--ci);color:var(--ci-text);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;transition:opacity .15s}
+    .sb:hover{opacity:.8}.sb:disabled{opacity:.35;cursor:not-allowed}
+
+    /* ── Adresse autocomplete ── */
+    .addr-suggestions{position:absolute;top:calc(100% + 4px);left:0;right:40px;background:var(--bg);border:.5px solid var(--bd);border-radius:12px;z-index:100;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)}
+    .addr-item{padding:9px 13px;font-size:13px;cursor:pointer;color:var(--tx);transition:background .1s;line-height:1.4;border-bottom:.5px solid var(--bd3)}
+    .addr-item:last-child{border-bottom:none}
+    .addr-item:hover,.addr-item:focus{background:var(--bg2);outline:none}
+    .addr-item .addr-main{font-weight:500}
+    .addr-item .addr-sub{font-size:11px;color:var(--tx2);margin-top:1px}
+
+    /* ── Upload ── */
+    .uz-outer{padding:0 0 .5rem 36px}
+    .upload-zone{border:1.5px dashed var(--bd);border-radius:12px;padding:14px;text-align:center;cursor:pointer;transition:all .15s;position:relative;overflow:hidden}
+    .upload-zone:hover{border-color:var(--bd2);background:var(--bg2)}
+    .upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+    .uz-icon{font-size:20px;color:var(--tx2);margin-bottom:5px}
+    .uz-text{font-size:12px;color:var(--tx2);line-height:1.5}
+    .uz-fname{font-size:12px;color:var(--ci);font-weight:500;margin-top:4px}
+    .skip-lnk{font-size:11.5px;color:var(--tx2);cursor:pointer;text-decoration:underline;margin-top:5px;display:inline-block}
+    .skip-lnk.red{color:var(--red);font-weight:500}
+    .skip-lnk.orange{color:var(--orange);font-weight:500}
+    .uz-progress{height:3px;background:var(--bg3);border-radius:2px;margin-top:6px;overflow:hidden;display:none}
+    .uz-progress.active{display:block}
+    .uz-progress-bar{height:100%;background:var(--ci);width:0;transition:width .3s}
+    .uz-url{display:none;font-size:11px;color:var(--green);margin-top:4px;font-weight:500}
+    .uz-level{font-size:11px;padding:4px 10px;border-radius:8px;display:inline-block;margin-bottom:8px}
+    .uz-level.red{background:#FEE2E2;color:#991B1B}
+    .uz-level.orange{background:#FEF3C7;color:#92400E}
+
+    /* ── Multi upload ── */
+    .multi-files{display:flex;flex-direction:column;gap:4px;margin-top:6px;text-align:left}
+    .multi-file-item{font-size:11.5px;color:var(--ci);display:flex;align-items:center;gap:4px}
+    .multi-file-item .ti{font-size:13px;color:var(--green)}
+    .multi-confirm-row{display:flex;gap:8px;margin-top:10px;justify-content:center}
+    .multi-confirm-btn{padding:6px 14px;border-radius:18px;border:.5px solid var(--bd);background:var(--bg);color:var(--tx);font-size:12px;font-family:'Sora',sans-serif;cursor:pointer;transition:all .12s}
+    .multi-confirm-btn:hover{background:var(--bg2)}
+    .multi-confirm-btn.primary{background:var(--ci);color:var(--ci-text);border-color:transparent}
+
+    /* ── Recap ── */
+    .rc{background:var(--bg2);border:.5px solid var(--bd3);border-radius:12px;padding:14px;margin:6px 0 10px 36px;font-size:12.5px}
+    .rc-sec-lbl{font-weight:600;color:var(--ci);margin-bottom:6px;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+    .rc-sec-lbl:not(:first-child){margin-top:12px}
+    .rr{display:flex;justify-content:space-between;padding:3px 0;border-bottom:.5px solid var(--bd3)}
+    .rr:last-child{border-bottom:none}
+    .rl{color:var(--tx2)}.rv{color:var(--tx);font-weight:500;text-align:right;max-width:55%}
+    .rr-block{flex-direction:column;gap:3px}.rv-block{color:var(--tx);font-style:italic;font-size:12px;line-height:1.5}
+
+    /* ── Success ── */
+    .success{text-align:center;padding:2.5rem 1rem}
+    .success.hidden{display:none}
+    .sico{font-size:44px;color:var(--green);margin-bottom:10px}
+
+    /* ── Phone input ── */
+    .phone-hint{font-size:10.5px;color:var(--tx3);margin-top:2px}
+    .phone-valid{border-color:var(--green)!important}
+    .phone-invalid{border-color:var(--red)!important}
+
+    /* ── Error banner ── */
+    .error-banner{background:#FEE2E2;border:1px solid #FECACA;border-radius:12px;padding:16px;text-align:center;color:#991B1B;font-size:13px;margin-top:2rem}
+  </style>
+</head>
+<body>
+<div class="cw">
+  <div class="ch">
+    <div class="alex-wrap">
+      <div class="alex-lottie" id="alex-avatar">A</div>
+    </div>
+    <div class="ch-info">
+      <div class="ch-name">Alex <span class="ch-state-dot" id="state-dot"></span></div>
+      <div class="ch-sub" id="ch-sub">Espace Apporteur — Easy Courtage</div>
+    </div>
+  </div>
+  <div class="prog-row">
+    <button class="back-btn hidden" id="back-btn">&larr; Retour</button>
+    <div class="prog"><div class="prog-bar" id="prog" style="width:3%"></div></div>
+  </div>
+  <div class="msgs" id="msgs"></div>
+  <div id="opts-zone" class="opts"></div>
+  <div id="inp-zone" class="inp-wrap hidden"></div>
+  <div id="uz-zone" class="uz-outer hidden"></div>
+  <div id="success" class="success hidden"></div>
+</div>
+
+<script>
+// ── Configuration ──
+const WEBHOOK_URL = 'https://hook.eu1.make.com/7hpv3j9psrpumea9op43vdj77lujyusl';
+const LOOKUP_URL  = 'https://n8n2.reaktimo.com/webhook/alex-lookup';
+const AUTH_URL    = 'https://n8n2.reaktimo.com/webhook/alex-auth-apporteur';
+const UPLOADCARE_PUBLIC_KEY = 'a66f066444c9f0f50bfb';
+const UPLOADCARE_CDN_BASE = 'https://3z7o986o1b.ucarecd.net';
+
+// ── Paramètres URL & token ──
+const urlParams = new URLSearchParams(window.location.search);
+const ADMIN_MODE = urlParams.get('admin') === '1';
+const TOKEN = urlParams.get('token') || localStorage.getItem('alex_apporteur_token') || null;
+
+// ── Identité apporteur (rempli après auth) ──
+let ID_APPORTEUR = null;
+let NOM_APPORTEUR = null;
+let EMAIL_APPORTEUR = null;
+
+const D = {}, history = [];
+let cur = 0, isExistingClient = false;
+
+/* ── Auth apporteur via token ── */
+async function authApporteur(token) {
+  try {
+    const res = await fetch(AUTH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token })
+    });
+    const data = await res.json();
+    if (data && data.valid) {
+      ID_APPORTEUR = data.id_apporteur || null;
+      NOM_APPORTEUR = data.nom || null;
+      EMAIL_APPORTEUR = data.email || null;
+      localStorage.setItem('alex_apporteur_token', token);
+      return { success: true };
+    }
+    return { success: false, reason: data.reason || 'Token invalide' };
+  } catch(err) {
+    console.error('Auth error:', err);
+    return { success: false, reason: 'Erreur de connexion' };
+  }
+}
+
+/* ── Capitalisation prénom/nom (aligné prod) ── */
+function capitalizeName(str) {
+  return str.trim()
+    .toLowerCase()
+    .replace(/(^|[\s'-])(\w)/g, (_, sep, c) => sep + c.toUpperCase());
+}
+
+/* ── Téléphone FR (aligné prod) ── */
+function normalizeFrenchPhone(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.startsWith('0033')) d = d.slice(4);
+  else if (d.startsWith('33')) d = d.slice(2);
+  if (!d.startsWith('0') && d.length > 0) d = '0' + d;
+  d = d.slice(0, 10);
+  return '+33' + d;
+}
+
+function isValidFrenchPhone(v) {
+  return /^\+330[1-9]\d{8}$/.test(v);
+}
+
+/* ── Lookup client existant via n8n ── */
+async function lookupClient(email, prenom) {
+  try {
+    const res = await fetch(LOOKUP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, prenom: prenom || null })
+    });
+    return await res.json();
+  } catch(err) {
+    console.error('Lookup error:', err);
+    return { found: false };
+  }
+}
+
+/* ── Uploadcare : upload réel → URL CDN ── */
+function uploadFile(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append('UPLOADCARE_PUB_KEY', UPLOADCARE_PUBLIC_KEY);
+    formData.append('UPLOADCARE_STORE', '1');
+    formData.append('file', file);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://upload.uploadcare.com/base/');
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+    xhr.onload = () => {
+      try {
+        const res = JSON.parse(xhr.responseText);
+        if (res.file) resolve(UPLOADCARE_CDN_BASE + '/' + res.file + '/' + encodeURIComponent(file.name));
+        else reject(new Error('Upload failed: ' + xhr.responseText));
+      } catch(e) { reject(e); }
+    };
+    xhr.onerror = () => reject(new Error('Network error'));
+    xhr.send(formData);
+  });
+}
+
+/* ── State ── */
+function setAlexState(state) {
+  const avatar = document.getElementById('alex-avatar');
+  const dot = document.getElementById('state-dot');
+  const sub = document.getElementById('ch-sub');
+  avatar.className = 'alex-lottie' + (state !== 'idle' ? ' ' + state : '');
+  dot.className = 'ch-state-dot' + (state !== 'idle' ? ' ' + state : '');
+  if (state === 'thinking') sub.textContent = 'En train de répondre...';
+  else if (state === 'success') sub.textContent = 'Demande envoyée !';
+  else sub.textContent = ADMIN_MODE ? '⚙ MODE TEST ADMIN' : 'Espace Apporteur — Easy Courtage';
+}
+
+/* ── Produits par profil (aligné prod Alex Web) ── */
+function getProducts(profil) {
+  if (profil === 'Particulier') return ['Auto','Habitation','Moto','Mutuelle Santé','Cycle'];
+  if (profil === 'Professionnel') return ['Auto','Local Professionnel','RC Professionnelle','Flotte Auto','Mutuelle Santé','Santé & Prévoyance Collective'];
+  return ['Auto','RC Décennale','Flotte Auto','Santé & Prévoyance Collective','Cyber Risque','RC Entreprise'];
+}
+
+/* ══════════════════════════════════════════════════
+   STEPS — 28 étapes (flux aligné Alex Web, wording apporteur)
+   RI conservé · docs multi-upload supprimé · contrat précédent supprimé
+   Documents complémentaires gérés via doc_mode en fin de parcours
+   ══════════════════════════════════════════════════ */
+const S = [
+  // 0 - Accueil
+  {id:'w', bot:()=>'Bonjour'+(NOM_APPORTEUR?' '+NOM_APPORTEUR:'')+' 👋 et merci pour cette nouvelle sollicitation.\n\nVeuillez renseigner les informations de votre client.e ci-dessous.', type:'opts', opts:["C'est parti !"], next:()=>1},
+
+  // ── BLOC A : CLIENT EXISTANT ? ──
+  // 1
+  {id:'deja_client', bot:"Votre client.e est déjà connu.e d'Easy Courtage Assurance ?", type:'opts', opts:['Oui','Non'], save:'_deja_client', next:d=>d._deja_client==='Oui'?2:4},
+  // 2
+  {id:'client_email', bot:"Indiquez l'adresse email du/de la client.e :", type:'input', ph:'email@exemple.fr', save:'_lookup_email', validate:'email', lowercase:true, next:()=>3},
+  // 3
+  {id:'client_lookup', type:'lookup', next_found:d=>d.profil?6:5, next_not_found:()=>2},
+
+  // 4 - Prénom (nouveau client)
+  {id:'prenom', bot:"Comment allons-nous l'appeler ? (prénom)", type:'input', ph:'Prénom du/de la client.e', save:'prenom', capitalize:true, next:()=>5},
+
+  // ── BLOC B : PROFIL & PRODUIT ──
+  // 5
+  {id:'profil', bot:"Le/la client.e est... ?", type:'opts', opts:['Particulier','Professionnel','Entreprise'], save:'profil', next:()=>6},
+  // 6
+  {id:'produit', bot:"Quelle assurance est recherchée ?", type:'opts',
+    opts:d=>getProducts(d.profil),
+    save:'produit', next:d=>{
+      if(['Auto','Moto','Cycle'].includes(d.produit)) return 7;
+      if(d.produit==='Flotte Auto') return 10;
+      if(d.produit==='RC Décennale') return 22;
+      return 12; // situation directement
+    }},
+
+  // ── BLOC C : VÉHICULE (Auto/Moto/Cycle) ──
+  // 7
+  {id:'permis', bot:"Quelle est la date d'obtention du permis du/de la client.e ?", type:'date', save:'date_permis', next:()=>8},
+  // 8
+  {id:'vehicule', bot:"Quel véhicule souhaite-t-il/elle assurer ? (marque et modèle)", type:'input', ph:'Ex : Peugeot 308', save:'vehicule', next:()=>9},
+  // 9
+  {id:'immat', bot:"Quelle est l'immatriculation du véhicule ?", type:'immat', save:'immatriculation', next:()=>10},
+
+  // ── BLOC D : HISTORIQUE ASSURANCE ──
+  // 10
+  {id:'assure', bot:"Le/la client.e a-t-il/elle été assuré.e au cours des 36 derniers mois ?", type:'opts', opts:['Oui','Non'], save:'assure_36mois',
+    next:d=>{if(d.assure_36mois==='Non'){D.bonus_malus='Sans bonus ni malus';return 12;}return 11;}},
+  // 11 - RI (Relevé d'Information)
+  {id:'ri', bot:"Le Relevé d'Information permettra à l'expert de proposer une offre plus précise. Vous pouvez le déposer ici.", type:'upload', accept:'.pdf,.jpg,.jpeg,.png', save:'fichier_ri', save_url:'fichier_ri_url', optional:true, level:'red', skipText:'Passer (fortement déconseillé)', next:()=>12},
+
+  // ── BLOC E : SITUATION ──
+  // 12
+  {id:'situation', bot:d=>{const m={
+    'Auto':'Quelques mots sur la situation de conducteur ou les attentes du/de la client.e ?',
+    'Moto':'Quelques mots sur l\'expérience moto ou les attentes du/de la client.e ?',
+    'Cycle':'Quelques mots sur l\'utilisation du vélo ou les attentes du/de la client.e ?',
+    'Flotte Auto':'Quelques mots sur la flotte ou les besoins spécifiques ?',
+    'Habitation':'Quelques mots sur le logement ou les attentes du/de la client.e ?',
+    'Local Professionnel':'Quelques mots sur le local ou l\'activité du/de la client.e ?',
+    'RC Professionnelle':'Quelques mots sur l\'activité ou les besoins en RC Pro ?',
+    'RC Entreprise':'Quelques mots sur l\'entreprise ou les besoins en couverture ?',
+    'RC Décennale':'Quelques mots sur les chantiers ou l\'activité du/de la client.e ?',
+    'Mutuelle Santé':'Quelques mots sur les besoins en santé du/de la client.e ?',
+    'Santé & Prévoyance Collective':'Quelques mots sur l\'effectif ou les besoins en couverture collective ?',
+    'Cyber Risque':'Quelques mots sur l\'infrastructure IT ou les préoccupations cyber ?'
+  };return m[d.produit]||'Décrivez le besoin de votre client.e :';}, type:'textarea', ph_fn:d=>{const p={
+    'Auto':'Ex : Première assurance, conducteur secondaire, tarif compétitif...',
+    'Moto':'Ex : Usage quotidien, roadster, hivernage, tarif...',
+    'Cycle':'Ex : VAE, vol fréquent, usage urbain...',
+    'Flotte Auto':'Ex : 12 véhicules, usage mixte pro/perso, sinistres récents...',
+    'Habitation':'Ex : Appartement T3, locataire, dépendances...',
+    'Local Professionnel':'Ex : Bureau 80m², stock marchandises, ERP...',
+    'RC Professionnelle':'Ex : Consultant IT, CA 200k€, missions à l\'étranger...',
+    'RC Entreprise':'Ex : PME 15 salariés, BTP, sous-traitance...',
+    'RC Décennale':'Ex : Maçonnerie, CA 500k€, 3 sinistres en 5 ans...',
+    'Mutuelle Santé':'Ex : Famille 4 personnes, optique importante, dentaire...',
+    'Santé & Prévoyance Collective':'Ex : 20 salariés, convention Syntec, prévoyance décès...',
+    'Cyber Risque':'Ex : E-commerce, données clients, télétravail...'
+  };return p[d.produit]||'Ex : Décrivez le besoin en quelques mots...';}, save:'situation', next:d=>{
+    if(isExistingClient){ return D.date_naissance ? 23 : 20; }
+    return 13;
+  }},
+
+  // ── BLOC F : COORDONNÉES (skip si client existant) ──
+  // 13
+  {id:'intro_coord', bot:d=>'Presque terminé 🙌 Passons aux coordonnées complètes de '+(d.prenom||'votre client.e')+'.', type:'opts', opts:['Continuer'], next:()=>14},
+  // 14
+  {id:'confirm_prenom', bot:d=>'Le prénom du/de la client.e est bien '+(d.prenom||'')+' ?', type:'opts', opts:['Oui, c\'est ça','Non, le corriger'], save:'_confirm_prenom', next:d=>d._confirm_prenom==='Oui, c\'est ça'?16:15},
+  // 15
+  {id:'correct_prenom', bot:"Quel est le prénom correct ?", type:'input', ph:'Prénom', save:'prenom', capitalize:true, next:()=>16},
+  // 16
+  {id:'nom', bot:d=>'Et le nom de famille de '+(d.prenom||'votre client.e')+' ?', type:'input', ph:'Ex : Dupont', save:'nom', capitalize:true, next:()=>17},
+  // 17
+  {id:'email', bot:"L'adresse email du/de la client.e ?", type:'input', ph:'Ex : sophie.dupont@email.fr', save:'email', validate:'email', lowercase:true, next:()=>18},
+  // 18
+  {id:'tel', bot:"Sur quel numéro l'expert peut-il joindre le/la client.e ?", type:'phone', save:'telephone', next:()=>19},
+  // 19
+  {id:'adresse', bot:"L'adresse du/de la client.e ? Tapez les premiers caractères, je complète automatiquement.", type:'address', save:'adresse', save_cp:'code_postal', save_ville:'ville', next:()=>20},
+  // 20
+  {id:'ddn', bot:"Date de naissance du/de la client.e ? (nécessaire pour établir le devis)", type:'date', save:'date_naissance', next:d=>['Professionnel','Entreprise'].includes(d.profil)?21:23},
+  // 21
+  {id:'siret', bot:"Le numéro SIRET de la structure ?", type:'input', ph:'Ex : 123 456 789 00012', save:'siret', next:()=>23},
+
+  // ── BLOC G : RC DÉCENNALE (branche spécifique) ──
+  // 22
+  {id:'rcd_assure', bot:"Le/la client.e est-il/elle déjà assuré.e en RC Décennale ?", type:'opts', opts:['Oui','Non'], save:'rcd_deja_assure', next:()=>12},
+
+  // ── BLOC H : FINALISATION ──
+  // 23
+  {id:'contact_pref', bot:"Dernière question — le/la client.e préfère être contacté.e par... ?", type:'opts', opts:['Téléphone','Email'], save:'contact_pref', next:()=>24},
+  // 24
+  {id:'doc_mode', bot:"Comment souhaitez-vous transmettre les pièces jointes ?", type:'opts', opts:['Joindre maintenant (recommandé)','Envoyer par email après'], save:'doc_mode', next:d=>d.doc_mode.includes('maintenant')?25:26},
+  // 25
+  {id:'fichier_supp', bot:"Déposez vos fichiers. Vous pouvez en ajouter plusieurs.", type:'multi_upload', accept:'.pdf,.jpg,.jpeg,.png,.doc,.docx', save:'fichier_supp', save_url:'fichier_supp_url', optional:false, next:()=>26},
+  // 26
+  {id:'recap', type:'recap', next:()=>27},
+  // 27
+  {id:'done', type:'done'}
+];
+
+const TOTAL = S.length;
+function gv(f) { return typeof f === 'function' ? f(D) : f; }
+
+/* ── DOM helpers ── */
+async function botMsg(txt, delay=0) {
+  return new Promise(res => { setTimeout(() => {
+    const ti = document.getElementById('typ'); if (ti) ti.remove();
+    const m = document.getElementById('msgs'), el = document.createElement('div');
+    el.className = 'msg bot';
+    const avDiv = document.createElement('div'); avDiv.className = 'av-bubble'; avDiv.textContent = 'A';
+    el.appendChild(avDiv);
+    const bub = document.createElement('div'); bub.className = 'bub'; bub.innerHTML = txt.replace(/\n/g,'<br>');
+    el.appendChild(bub); m.appendChild(el); m.scrollTop = m.scrollHeight; res();
+  }, delay); });
+}
+
+function showTyping(delay=0) {
+  return new Promise(res => { setTimeout(() => {
+    const m = document.getElementById('msgs'), el = document.createElement('div');
+    el.className = 'msg bot'; el.id = 'typ';
+    const avDiv = document.createElement('div'); avDiv.className = 'av-bubble'; avDiv.textContent = 'A';
+    el.appendChild(avDiv);
+    const bub = document.createElement('div'); bub.className = 'bub';
+    bub.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+    el.appendChild(bub); m.appendChild(el); m.scrollTop = m.scrollHeight; res();
+  }, delay); });
+}
+
+async function userMsg(txt) {
+  const ti = document.getElementById('typ'); if (ti) ti.remove();
+  const m = document.getElementById('msgs'), el = document.createElement('div');
+  el.className = 'msg user'; el.innerHTML = '<div class="bub">' + txt + '</div>';
+  m.appendChild(el); m.scrollTop = m.scrollHeight;
+}
+
+function scrollToUI() {
+  setTimeout(() => {
+    const el = document.getElementById('opts-zone').children.length ? document.getElementById('opts-zone')
+             : !document.getElementById('inp-zone').classList.contains('hidden') ? document.getElementById('inp-zone')
+             : !document.getElementById('uz-zone').classList.contains('hidden') ? document.getElementById('uz-zone')
+             : document.getElementById('msgs');
+    el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, 120);
+}
+
+function clearUI() {
+  document.getElementById('opts-zone').innerHTML = '';
+  document.getElementById('inp-zone').innerHTML = '';
+  document.getElementById('inp-zone').classList.add('hidden');
+  document.getElementById('uz-zone').innerHTML = '';
+  document.getElementById('uz-zone').classList.add('hidden');
+  setAlexState('idle');
+}
+
+function setProg(idx) {
+  document.getElementById('prog').style.width = Math.max(3, Math.min(97, Math.round(idx / TOTAL * 100))) + '%';
+  const bb = document.getElementById('back-btn');
+  history.length > 0 && idx > 0 && S[idx] && S[idx].type !== 'done' ? bb.classList.remove('hidden') : bb.classList.add('hidden');
+}
+
+/* ── Back ── */
+document.getElementById('back-btn').onclick = () => {
+  if (!history.length) return;
+  const prev = history.pop();
+  const msgs = document.getElementById('msgs');
+  const ub = msgs.querySelectorAll('.msg.user'); if (ub.length) ub[ub.length-1].remove();
+  const bb = msgs.querySelectorAll('.msg.bot'); if (bb.length) bb[bb.length-1].remove();
+  const s = S[prev];
+  if (s && s.save) delete D[s.save];
+  if (s && s.save_url) delete D[s.save_url];
+  if (s && s.save_cp) delete D[s.save_cp];
+  if (s && s.save_ville) delete D[s.save_ville];
+  clearUI(); runStep(prev, true);
+};
+
+/* ── Masks ── */
+function applyDateMask(inp) {
+  inp.setAttribute('maxlength','10'); inp.setAttribute('inputmode','numeric');
+  inp.addEventListener('input', function() {
+    let v = this.value.replace(/\D/g,''); if (v.length > 8) v = v.slice(0,8);
+    let out = '';
+    if (v.length > 4) out = v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4);
+    else if (v.length > 2) out = v.slice(0,2)+'/'+v.slice(2);
+    else out = v;
+    this.value = out;
+  });
+}
+
+function applyImmatMask(inp) {
+  inp.setAttribute('maxlength','9'); inp.setAttribute('autocomplete','off');
+  inp.addEventListener('input', function() {
+    let raw = this.value.replace(/[^A-Z0-9]/gi,'').toUpperCase(); if (raw.length > 7) raw = raw.slice(0,7);
+    let out = '';
+    if (raw.length <= 2) out = raw;
+    else if (raw.length <= 5) out = raw.slice(0,2)+'-'+raw.slice(2);
+    else out = raw.slice(0,2)+'-'+raw.slice(2,5)+'-'+raw.slice(5);
+    this.value = out;
+    const valid = /^[A-Z]{2}-\d{3}-[A-Z]{2}$/.test(out);
+    inp.classList.toggle('immat-valid', valid);
+    inp.classList.toggle('immat-invalid', out.length === 9 && !valid);
+    const btn = inp.parentNode.querySelector('.sb'); if (btn) btn.disabled = !valid;
+  });
+}
+
+function applyPhoneMask(inp) {
+  inp.setAttribute('maxlength', '13'); inp.setAttribute('inputmode', 'tel');
+  inp.value = '+33';
+  inp.addEventListener('input', function() {
+    const raw = normalizeFrenchPhone(this.value);
+    this.value = raw;
+    const valid = isValidFrenchPhone(raw);
+    inp.classList.toggle('phone-valid', valid);
+    inp.classList.toggle('phone-invalid', raw.length >= 13 && !valid);
+    const btn = inp.parentNode.querySelector('.sb'); if (btn) btn.disabled = !valid;
+  });
+  inp.addEventListener('keydown', function(e) { if ((e.key === 'Backspace' || e.key === 'Delete') && this.selectionStart <= 3) e.preventDefault(); });
+  inp.addEventListener('focus', function() { if (this.selectionStart < 3) this.setSelectionRange(3, 3); });
+  inp.addEventListener('click', function() { if (this.selectionStart < 3) this.setSelectionRange(3, 3); });
+}
+
+/* ── Validation dates ── */
+function parseDate(str) {
+  const p = str.split('/');
+  if (p.length !== 3) return null;
+  const d = parseInt(p[0],10), m = parseInt(p[1],10)-1, y = parseInt(p[2],10);
+  const dt = new Date(y, m, d);
+  if (dt.getDate()!==d || dt.getMonth()!==m || dt.getFullYear()!==y) return null;
+  return dt;
+}
+
+function validateDate(val, type) {
+  const dt = parseDate(val);
+  if (!dt) return 'Date invalide (format jj/mm/aaaa)';
+  const now = new Date();
+  const age = now.getFullYear() - dt.getFullYear();
+  if (dt > now) return 'La date ne peut pas être dans le futur.';
+  if (type === 'naissance') {
+    if (age > 120 || age < 16) return 'Vérifiez la date de naissance (entre 16 et 120 ans).';
+  }
+  if (type === 'permis') {
+    if (dt.getFullYear() < 1940) return 'Date de permis trop ancienne.';
+    if (D.date_naissance) {
+      const nais = parseDate(D.date_naissance);
+      if (nais) {
+        const agePermis = dt.getFullYear() - nais.getFullYear() - ((dt.getMonth() < nais.getMonth() || (dt.getMonth() === nais.getMonth() && dt.getDate() < nais.getDate())) ? 1 : 0);
+        if (agePermis < 17) return 'Incohérence : le permis ne peut pas être obtenu avant 17 ans.';
+      }
+    }
+  }
+  if (type === 'naissance' && D.date_permis) {
+    const permis = parseDate(D.date_permis);
+    if (permis) {
+      const agePermis = permis.getFullYear() - dt.getFullYear() - ((permis.getMonth() < dt.getMonth() || (permis.getMonth() === dt.getMonth() && permis.getDate() < dt.getDate())) ? 1 : 0);
+      if (agePermis < 17) return 'Incohérence : le/la client.e aurait eu moins de 17 ans à la date du permis indiquée.';
+    }
+  }
+  return null;
+}
+
+/* ── Validation contenu texte libre ── */
+function validateTextContent(text) {
+  const t = text.toLowerCase().trim();
+  if (t.length < 5) return 'Merci de détailler un peu plus pour que l\'expert puisse traiter au mieux.';
+  if (/[bcdfghjklmnpqrstvwxz]{6,}/i.test(t) || /(.)\1{4,}/.test(t)) return 'Ce message ne semble pas lisible. Pourriez-vous reformuler ?';
+  const badWords = ['merde','putain','connard','connasse','enculer','enculé','nique','ntm','fdp','pd','salaud','salope','batard','bâtard','ta gueule','ferme la','casse toi','va te faire'];
+  if (badWords.some(w => t.includes(w))) return 'Merci de rester courtois 🙏 Pourriez-vous reformuler ?';
+  if (/^[\d\s\W]+$/.test(t) && !/[a-zà-ÿ]/i.test(t)) return 'Merci de décrire le besoin en quelques mots.';
+  return null;
+}
+
+/* ── Address autocomplete ── */
+let addrTimer = null;
+function showAddress(cb) {
+  const z = document.getElementById('inp-zone'); z.classList.remove('hidden');
+  const hint = document.createElement('div'); hint.className = 'inp-hint';
+  hint.innerHTML = '<i class="ti ti-map-pin"></i> Saisissez l\'adresse — sélectionnez une suggestion';
+  const row = document.createElement('div'); row.className = 'inp-row'; row.style.position = 'relative';
+  const inp = document.createElement('input'); inp.className = 'ci'; inp.placeholder = 'Ex : 12 rue des Lilas 75011'; inp.setAttribute('autocomplete','off');
+  const btn = document.createElement('button'); btn.className = 'sb'; btn.setAttribute('aria-label','Valider'); btn.innerHTML = '<i class="ti ti-arrow-right"></i>';
+  const sugg = document.createElement('div'); sugg.className = 'addr-suggestions hidden';
+  const sub = () => { const v = inp.value.trim(); if (!v) return; sugg.classList.add('hidden'); clearUI(); cb(v, null, null); };
+  btn.onclick = sub;
+  inp.onkeydown = e => { if (e.key==='Enter'){e.preventDefault();sub();} if(e.key==='Escape')sugg.classList.add('hidden'); if(e.key==='ArrowDown'){e.preventDefault();const it=sugg.querySelectorAll('.addr-item');if(it.length)it[0].focus();} };
+  inp.oninput = () => {
+    clearTimeout(addrTimer); const q = inp.value.trim();
+    if (q.length < 3) { sugg.classList.add('hidden'); return; }
+    addrTimer = setTimeout(async () => {
+      try {
+        let feats = [];
+        const r = await fetch('https://api-adresse.data.gouv.fr/search/?q='+encodeURIComponent(q)+'&limit=5&type=housenumber');
+        const data = await r.json(); feats = data.features || [];
+        if (!feats.length) { const r2 = await fetch('https://api-adresse.data.gouv.fr/search/?q='+encodeURIComponent(q)+'&limit=5'); const d2 = await r2.json(); feats = d2.features || []; }
+        sugg.innerHTML = '';
+        if (!feats.length) { sugg.classList.add('hidden'); return; }
+        feats.forEach(f => {
+          const p = f.properties, label = p.label||'', cp = p.postcode||'', city = p.city||'', street = p.name||'';
+          const item = document.createElement('div'); item.className = 'addr-item'; item.setAttribute('role','option'); item.setAttribute('tabindex','0');
+          item.innerHTML = '<div class="addr-main">'+street+'</div><div class="addr-sub">'+cp+' '+city+'</div>';
+          const select = () => { inp.value = label; sugg.classList.add('hidden'); clearUI(); cb(label, cp, city); };
+          item.onclick = select;
+          item.onkeydown = e => { if(e.key==='Enter'||e.key===' '){e.preventDefault();select();} if(e.key==='ArrowDown'){e.preventDefault();const nx=item.nextElementSibling;if(nx)nx.focus();} if(e.key==='ArrowUp'){e.preventDefault();const pv=item.previousElementSibling;if(pv)pv.focus();else inp.focus();} if(e.key==='Escape'){sugg.classList.add('hidden');inp.focus();} };
+          sugg.appendChild(item);
+        });
+        sugg.classList.remove('hidden');
+      } catch(e) { sugg.classList.add('hidden'); }
+    }, 300);
+  };
+  document.addEventListener('click', function h(e) { if (!row.contains(e.target)) { sugg.classList.add('hidden'); document.removeEventListener('click', h); } });
+  row.appendChild(inp); row.appendChild(btn); row.appendChild(sugg);
+  z.appendChild(hint); z.appendChild(row);
+  setTimeout(() => { inp.focus(); scrollToUI(); }, 80);
+}
+
+/* ── Input renderers ── */
+function showOpts(opts, cb, alertIdx) {
+  const z = document.getElementById('opts-zone'); z.innerHTML = '';
+  opts.forEach((o, i) => {
+    const b = document.createElement('button'); b.className = 'opt'; b.textContent = o;
+    if (alertIdx !== undefined && i === alertIdx) b.classList.add('alert-orange');
+    b.onclick = () => { z.querySelectorAll('.opt').forEach(x => x.disabled = true); b.classList.add('sel'); setTimeout(() => { clearUI(); cb(o); }, 180); };
+    z.appendChild(b);
+  });
+  scrollToUI();
+}
+
+function showInput(ph, cb, isTA=false, validate=null, capitalize=false) {
+  const z = document.getElementById('inp-zone'); z.classList.remove('hidden');
+  const hint = document.createElement('div'); hint.className = 'inp-hint'; hint.innerHTML = '<i class="ti ti-corner-down-left"></i> Entrée pour continuer';
+  const row = document.createElement('div'); row.className = 'inp-row';
+  let inp;
+  if (isTA) { inp = document.createElement('textarea'); inp.className = 'ci tall'; inp.rows = 3; inp.placeholder = ph; inp.onkeydown = e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sub();} }; }
+  else { inp = document.createElement('input'); inp.className = 'ci'; inp.placeholder = ph; inp.onkeydown = e => { if(e.key==='Enter') sub(); }; }
+  if (capitalize) {
+    inp.addEventListener('input', function() {
+      const start = this.selectionStart, end = this.selectionEnd;
+      this.value = capitalizeName(this.value);
+      this.setSelectionRange(start, end);
+    });
+  }
+  const btn = document.createElement('button'); btn.className = 'sb'; btn.setAttribute('aria-label','Envoyer'); btn.innerHTML = '<i class="ti ti-arrow-right"></i>';
+  const errEl = document.createElement('div'); errEl.style.cssText = 'font-size:11px;color:var(--red);margin-top:2px;display:none';
+  const sub = () => {
+    const v = inp.value.trim(); if (!v) return;
+    if (validate === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { errEl.textContent = 'Adresse email invalide'; errEl.style.display = 'block'; return; }
+    if (validate === 'textarea') {
+      const contentErr = validateTextContent(v);
+      if (contentErr) { errEl.textContent = contentErr; errEl.style.display = 'block'; return; }
+    }
+    errEl.style.display = 'none'; clearUI(); cb(v);
+  };
+  btn.onclick = sub; row.appendChild(inp); row.appendChild(btn);
+  z.appendChild(hint); z.appendChild(row); z.appendChild(errEl);
+  setTimeout(() => { inp.focus(); scrollToUI(); }, 80);
+}
+
+function showPhoneInput(cb) {
+  const z = document.getElementById('inp-zone'); z.classList.remove('hidden');
+  const hint = document.createElement('div'); hint.className = 'inp-hint'; hint.innerHTML = '<i class="ti ti-phone"></i> Format : +33 puis 10 chiffres';
+  const row = document.createElement('div'); row.className = 'inp-row';
+  const inp = document.createElement('input'); inp.className = 'ci'; inp.setAttribute('inputmode','tel');
+  applyPhoneMask(inp);
+  const btn = document.createElement('button'); btn.className = 'sb'; btn.setAttribute('aria-label','Valider'); btn.innerHTML = '<i class="ti ti-arrow-right"></i>'; btn.disabled = true;
+  const sub = () => { const v = normalizeFrenchPhone(inp.value.trim()); if (!isValidFrenchPhone(v)) return; clearUI(); cb(v); };
+  btn.onclick = sub; inp.onkeydown = e => { if(e.key==='Enter') sub(); };
+  row.appendChild(inp); row.appendChild(btn);
+  const phoneHint = document.createElement('div'); phoneHint.className = 'phone-hint'; phoneHint.textContent = 'Ex : +330612345678';
+  z.appendChild(hint); z.appendChild(row); z.appendChild(phoneHint);
+  setTimeout(() => { inp.focus(); inp.setSelectionRange(3,3); scrollToUI(); }, 80);
+}
+
+function showDateInput(cb, dateType) {
+  const z = document.getElementById('inp-zone'); z.classList.remove('hidden');
+  const hint = document.createElement('div'); hint.className = 'inp-hint'; hint.innerHTML = '<i class="ti ti-corner-down-left"></i> Format jj/mm/aaaa';
+  const row = document.createElement('div'); row.className = 'inp-row';
+  const inp = document.createElement('input'); inp.className = 'ci'; inp.placeholder = 'jj/mm/aaaa'; applyDateMask(inp);
+  const btn = document.createElement('button'); btn.className = 'sb'; btn.setAttribute('aria-label','Valider'); btn.innerHTML = '<i class="ti ti-arrow-right"></i>';
+  const errEl = document.createElement('div'); errEl.style.cssText = 'font-size:11px;color:var(--red);margin-top:2px;display:none';
+  const sub = () => {
+    const v = inp.value.trim(); if (!v || v.length < 10) return;
+    const err = validateDate(v, dateType || null);
+    if (err) { errEl.textContent = err; errEl.style.display = 'block'; return; }
+    errEl.style.display = 'none'; clearUI(); cb(v);
+  };
+  btn.onclick = sub; inp.onkeydown = e => { if(e.key==='Enter') sub(); };
+  row.appendChild(inp); row.appendChild(btn); z.appendChild(hint); z.appendChild(row); z.appendChild(errEl);
+  setTimeout(() => { inp.focus(); scrollToUI(); }, 80);
+}
+
+function showImmat(cb) {
+  const z = document.getElementById('inp-zone'); z.classList.remove('hidden');
+  const hint = document.createElement('div'); hint.className = 'inp-hint'; hint.innerHTML = '<i class="ti ti-corner-down-left"></i> Format AA-000-BB — les tirets sont automatiques';
+  const row = document.createElement('div'); row.className = 'inp-row';
+  const inp = document.createElement('input'); inp.className = 'ci immat'; inp.placeholder = 'AA-000-BB'; applyImmatMask(inp);
+  const btn = document.createElement('button'); btn.className = 'sb'; btn.setAttribute('aria-label','Valider'); btn.innerHTML = '<i class="ti ti-arrow-right"></i>'; btn.disabled = true;
+  const sub = () => { const v = inp.value.trim(); if (!/^[A-Z]{2}-\d{3}-[A-Z]{2}$/.test(v)) return; clearUI(); cb(v); };
+  btn.onclick = sub; inp.onkeydown = e => { if(e.key==='Enter') sub(); };
+  row.appendChild(inp); row.appendChild(btn); z.appendChild(hint); z.appendChild(row);
+  setTimeout(() => { inp.focus(); scrollToUI(); }, 80);
+}
+
+/* ── Upload simple (RI) ── */
+function showUpload(accept, save, saveUrl, optional, cb, level, skipText) {
+  const z = document.getElementById('uz-zone'); z.classList.remove('hidden');
+  if (level && level !== 'neutral') {
+    const lvl = document.createElement('div');
+    lvl.className = 'uz-level ' + level;
+    lvl.textContent = level === 'red' ? '⚠ Fortement recommandé' : '🟡 Recommandé';
+    z.appendChild(lvl);
+  }
+  const uz = document.createElement('div'); uz.className = 'upload-zone';
+  const uzId = 'uz-' + save;
+  uz.innerHTML = '<input type="file" accept="'+accept+'" id="'+uzId+'">' +
+    '<div class="uz-icon"><i class="ti ti-upload"></i></div>' +
+    '<div class="uz-text">Cliquez ou glissez un fichier ici<br><span style="font-size:11px;opacity:.7">JPG, PDF · max 10 Mo</span></div>' +
+    '<div class="uz-fname" id="uzn-'+save+'"></div>' +
+    '<div class="uz-progress" id="uzp-'+save+'"><div class="uz-progress-bar" id="uzpb-'+save+'"></div></div>' +
+    '<div class="uz-url" id="uzu-'+save+'"></div>';
+  z.appendChild(uz);
+  if (optional) {
+    const sk = document.createElement('span');
+    sk.className = 'skip-lnk' + (level === 'red' ? ' red' : level === 'orange' ? ' orange' : '');
+    sk.textContent = skipText || 'Passer cette étape →';
+    sk.onclick = () => { D[save] = '(non fourni)'; if(saveUrl) D[saveUrl] = null; clearUI(); cb('(non fourni)', null); };
+    z.appendChild(sk);
+  }
+  scrollToUI();
+  document.getElementById(uzId).onchange = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    document.getElementById('uzn-'+save).textContent = file.name;
+    const prog = document.getElementById('uzp-'+save);
+    const progBar = document.getElementById('uzpb-'+save);
+    prog.classList.add('active');
+    try {
+      const url = await uploadFile(file, (pct) => { progBar.style.width = pct + '%'; });
+      prog.classList.remove('active'); progBar.style.width = '100%';
+      const urlEl = document.getElementById('uzu-'+save);
+      urlEl.textContent = '✓ Fichier déposé'; urlEl.style.display = 'block';
+      D[save] = file.name; if (saveUrl) D[saveUrl] = url;
+      setTimeout(() => { clearUI(); cb(file.name, url); }, 600);
+    } catch(err) {
+      prog.classList.remove('active');
+      document.getElementById('uzn-'+save).textContent = '⚠ Erreur upload — réessayez';
+      document.getElementById('uzn-'+save).style.color = 'var(--red)';
+      console.error('Upload error:', err);
+    }
+  };
+}
+
+/* ── Multi-upload (fichiers complémentaires) ── */
+function showMultiUpload(accept, save, saveUrl, optional, cb) {
+  const z = document.getElementById('uz-zone'); z.classList.remove('hidden');
+  const uploadedFiles = [];
+  const uz = document.createElement('div'); uz.className = 'upload-zone';
+  const uzId = 'uz-' + save;
+  uz.innerHTML = '<input type="file" accept="'+accept+'" id="'+uzId+'" multiple>' +
+    '<div class="uz-icon"><i class="ti ti-upload"></i></div>' +
+    '<div class="uz-text">Cliquez ou glissez un ou plusieurs fichiers<br><span style="font-size:11px;opacity:.7">JPG, PDF, DOC · max 10 Mo / fichier</span></div>' +
+    '<div class="multi-files" id="mf-'+save+'"></div>' +
+    '<div class="uz-progress" id="uzp-'+save+'"><div class="uz-progress-bar" id="uzpb-'+save+'"></div></div>';
+  z.appendChild(uz);
+  const confirmRow = document.createElement('div'); confirmRow.className = 'multi-confirm-row'; confirmRow.id = 'mc-'+save; confirmRow.style.display = 'none';
+  const btnAdd = document.createElement('button'); btnAdd.className = 'multi-confirm-btn'; btnAdd.textContent = '+ Ajouter un autre fichier';
+  const btnDone = document.createElement('button'); btnDone.className = 'multi-confirm-btn primary'; btnDone.textContent = 'Confirmer et continuer →';
+  confirmRow.appendChild(btnAdd); confirmRow.appendChild(btnDone);
+  z.appendChild(confirmRow);
+  if (optional) {
+    const sk = document.createElement('span'); sk.className = 'skip-lnk'; sk.textContent = 'Passer cette étape →'; sk.id = 'sk-'+save;
+    sk.onclick = () => { D[save] = '(non fourni)'; if(saveUrl) D[saveUrl] = null; clearUI(); cb('(non fourni)', null); };
+    z.appendChild(sk);
+  }
+  scrollToUI();
+  function updateConfirmUI() {
+    const mc = document.getElementById('mc-'+save);
+    const sk = document.getElementById('sk-'+save);
+    if (uploadedFiles.length > 0) { mc.style.display = 'flex'; if (sk) sk.style.display = 'none'; }
+  }
+  async function handleFiles(files) {
+    const prog = document.getElementById('uzp-'+save);
+    const progBar = document.getElementById('uzpb-'+save);
+    const mfZone = document.getElementById('mf-'+save);
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      prog.classList.add('active'); progBar.style.width = '0%';
+      try {
+        const url = await uploadFile(file, pct => { progBar.style.width = pct + '%'; });
+        uploadedFiles.push({name: file.name, url});
+        const item = document.createElement('div'); item.className = 'multi-file-item';
+        item.innerHTML = '<i class="ti ti-check"></i> ' + file.name;
+        mfZone.appendChild(item);
+      } catch(err) {
+        const item = document.createElement('div'); item.className = 'multi-file-item';
+        item.innerHTML = '<span style="color:var(--red)">⚠ ' + file.name + ' (erreur)</span>';
+        mfZone.appendChild(item);
+        console.error('Upload error:', err);
+      }
+    }
+    prog.classList.remove('active'); progBar.style.width = '100%';
+    updateConfirmUI();
+  }
+  document.getElementById(uzId).onchange = e => { const files = e.target.files; if (files.length) handleFiles(files); };
+  btnAdd.onclick = () => { document.getElementById(uzId).click(); };
+  btnDone.onclick = () => {
+    const names = uploadedFiles.map(f => f.name).join(', ');
+    D[save] = names;
+    if (saveUrl) D[saveUrl] = uploadedFiles.map(f => f.url);
+    clearUI(); cb(names, D[saveUrl] || []);
+  };
+}
+
+/* ── Recap ── */
+function buildRecap() {
+  const secs = [
+    {lbl:'Projet', keys:[
+      {k:'profil',l:'Profil client'},{k:'produit',l:'Assurance'},{k:'date_permis',l:'Permis'},
+      {k:'vehicule',l:'Véhicule'},{k:'immatriculation',l:'Immatriculation'},
+      {k:'assure_36mois',l:'Assuré 36 mois'},{k:'rcd_deja_assure',l:'RC Déc. assuré'},
+      {k:'bonus_malus',l:'Bonus/Malus'},
+      {k:'fichier_ri',l:"Relevé d'info"},
+      {k:'situation',l:'Besoin',block:true}
+    ]},
+    {lbl:'Coordonnées client', keys:[
+      {k:'prenom',l:'Prénom'},{k:'nom',l:'Nom'},
+      {k:'email',l:'Email'},{k:'telephone',l:'Téléphone'},{k:'adresse',l:'Adresse'},
+      {k:'date_naissance',l:'Date de naissance'},{k:'siret',l:'SIRET'},
+      {k:'contact_pref',l:'Contact préféré'}
+    ]},
+    {lbl:'Documents', keys:[
+      {k:'doc_mode',l:'Transmission'},{k:'fichier_supp',l:'Fichier(s) joint(s)'}
+    ]}
+  ];
+  let html = '<div class="rc">';
+  secs.forEach(sec => {
+    const rows = sec.keys.filter(({k}) => D[k] && D[k] !== '(non fourni)');
+    if (!rows.length) return;
+    html += '<div class="rc-sec-lbl">'+sec.lbl+'</div>';
+    rows.forEach(({k,l,block}) => {
+      if (block) html += '<div class="rr rr-block"><span class="rl">'+l+'</span><span class="rv-block">"'+D[k]+'"</span></div>';
+      else html += '<div class="rr"><span class="rl">'+l+'</span><span class="rv">'+D[k]+'</span></div>';
+    });
+  });
+  return html + '</div>';
+}
+
+/* ── Envoi webhook Make ── */
+async function sendToMake() {
+  const payload = {
+    id_apporteur: ID_APPORTEUR,
+    profil: D.profil || null,
+    produit: D.produit || null,
+    date_permis: D.date_permis || null,
+    vehicule: D.vehicule || null,
+    immatriculation: D.immatriculation || null,
+    assure_36mois: D.assure_36mois || null,
+    bonus_malus: D.bonus_malus || null,
+    rcd_deja_assure: D.rcd_deja_assure || null,
+    fichier_ri: D.fichier_ri || null,
+    fichier_ri_url: D.fichier_ri_url || null,
+    situation: D.situation || null,
+    prenom: D.prenom || null,
+    nom: D.nom || null,
+    email: D.email || null,
+    telephone: D.telephone || null,
+    adresse: D.adresse || null,
+    code_postal: D.code_postal || null,
+    ville: D.ville || null,
+    date_naissance: D.date_naissance || null,
+    siret: D.siret || null,
+    contact_pref: D.contact_pref || null,
+    doc_mode: D.doc_mode || null,
+    fichier_supp: D.fichier_supp || null,
+    fichier_supp_url: Array.isArray(D.fichier_supp_url) ? D.fichier_supp_url : [],
+    _deja_client: D._deja_client || null,
+    _lookup_email: D._lookup_email || null,
+    nom_apporteur: NOM_APPORTEUR,
+    email_apporteur: EMAIL_APPORTEUR,
+    token: TOKEN,
+    source: 'Alex Apporteur',
+    submitted_at: new Date().toISOString()
+  };
+  try {
+    await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    console.log('✅ Payload envoyé:', payload);
+  } catch(err) { console.error('❌ Webhook error:', err); }
+}
+
+/* ── Runner ── */
+async function runStep(idx, isBack=false) {
+  cur = idx; setProg(idx);
+  const s = S[idx]; if (!s) return;
+
+  // ── Type lookup (client existant) ──
+  if (s.type === 'lookup') {
+    setAlexState('thinking');
+    await showTyping(200);
+    await botMsg('Je vérifie le dossier…', 650);
+    setAlexState('idle');
+    const result = await lookupClient(D._lookup_email, D.prenom || null);
+    if (result && result.found) {
+      // Stocker les données temporairement avant confirmation
+      const _tmp = {};
+      if (result.nom) _tmp.nom = capitalizeName(result.nom);
+      if (result.prenom) _tmp.prenom = capitalizeName(result.prenom);
+      if (result.telephone) _tmp.telephone = normalizeFrenchPhone(result.telephone);
+      if (result.adresse) _tmp.adresse = result.adresse;
+      if (result.code_postal) _tmp.code_postal = result.code_postal;
+      if (result.ville) _tmp.ville = result.ville;
+      if (result.date_naissance) {
+        const dn = result.date_naissance;
+        if (/^\d{4}-\d{2}-\d{2}/.test(dn)) {
+          const p = dn.split('-'); _tmp.date_naissance = p[2]+'/'+p[1]+'/'+p[0];
+        } else { _tmp.date_naissance = dn; }
+      }
+      if (result.email) _tmp.email = result.email;
+      if (result.profil) _tmp.profil = result.profil;
+      if (result.siret) _tmp.siret = result.siret;
+
+      // Construire le message de confirmation
+      let confirmName = (_tmp.prenom || '') + ' ' + (_tmp.nom || '');
+      if (_tmp.siret && ['Professionnel','Entreprise'].includes(_tmp.profil)) {
+        confirmName += ' — ' + (_tmp.siret);
+      }
+      setAlexState('thinking'); await showTyping(200);
+      await botMsg('J\'ai retrouvé <strong>' + confirmName.trim() + '</strong> — c\'est bien votre client.e ?', 650);
+      setAlexState('idle');
+
+      showOpts(['Oui, c\'est ça', 'Non, ce n\'est pas la bonne personne'], async choice => {
+        history.push(idx);
+        await userMsg(choice);
+        if (choice.includes('Oui')) {
+          // Confirmer → appliquer les données et continuer
+          isExistingClient = true;
+          Object.assign(D, _tmp);
+          setAlexState('thinking'); await showTyping(200);
+          await botMsg('Parfait 🙌 Coordonnées déjà enregistrées.', 650);
+          setAlexState('idle');
+          runStep(s.next_found(D));
+        } else {
+          // Pas la bonne personne → proposer réessayer ou nouveau
+          setAlexState('thinking'); await showTyping(200);
+          await botMsg('Pas de souci. Souhaitez-vous réessayer avec un autre email ou continuer comme nouveau client ?', 650);
+          setAlexState('idle');
+          showOpts(['Réessayer avec un autre email', 'Continuer comme nouveau client'], async choice2 => {
+            await userMsg(choice2);
+            if (choice2.includes('Réessayer')) {
+              runStep(s.next_not_found(D));
+            } else {
+              isExistingClient = false;
+              runStep(4);
+            }
+          });
+        }
+      });
+    } else {
+      setAlexState('thinking'); await showTyping(200);
+      await botMsg('Je ne trouve pas de compte avec cette adresse. Souhaitez-vous réessayer ou continuer comme nouveau client ?', 650);
+      setAlexState('idle');
+      showOpts(['Réessayer','Continuer comme nouveau client'], async choice => {
+        history.push(idx);
+        await userMsg(choice);
+        if (choice === 'Réessayer') {
+          runStep(s.next_not_found(D));
+        } else {
+          isExistingClient = false;
+          runStep(4); // prénom (nouveau client)
+        }
+      });
+    }
+    return;
+  }
+
+  if (s.type === 'done') {
+    clearUI(); setAlexState('success');
+    const successEl = document.getElementById('success');
+    successEl.innerHTML = '<div class="sico"><i class="ti ti-circle-check"></i></div>'
+      + '<p style="font-size:16px;font-weight:600;color:var(--tx);margin-bottom:10px">Demande reçue ! ✓</p>'
+      + '<p style="font-size:13.5px;color:var(--tx);margin-bottom:8px">Votre apport d\'affaire pour <strong>' + (D.prenom||'')+' '+(D.nom||'') + '</strong> a bien été enregistré.</p>'
+      + '<p style="font-size:13px;color:var(--tx2);line-height:1.7">Vous recevrez un email de confirmation dans quelques minutes.</p>'
+      + '<p style="font-size:14px;font-weight:500;color:var(--ci);margin-top:14px">Merci pour votre confiance !</p>';
+    successEl.classList.remove('hidden');
+    document.getElementById('back-btn').classList.add('hidden');
+    document.getElementById('prog').style.width = '100%';
+    await sendToMake();
+    return;
+  }
+
+  if (s.type === 'recap') {
+    setAlexState('thinking'); await showTyping(200);
+    await botMsg('Voici le récapitulatif de la demande :', 700);
+    setAlexState('idle');
+    setTimeout(() => {
+      const ti = document.getElementById('typ'); if (ti) ti.remove();
+      const m = document.getElementById('msgs'), el = document.createElement('div');
+      el.innerHTML = buildRecap(); m.appendChild(el); m.scrollTop = m.scrollHeight;
+      showOpts(['✅ Confirmer et envoyer','↩ Recommencer'], choice => {
+        if (choice.includes('Recommencer')) { Object.keys(D).forEach(k => delete D[k]); history.length = 0; isExistingClient = false; document.getElementById('msgs').innerHTML = ''; runStep(0); }
+        else { userMsg('Confirmer et envoyer').then(() => runStep(S.length - 1)); }
+      });
+    }, 900);
+    return;
+  }
+
+  const bt = gv(s.bot);
+  setAlexState('thinking');
+  await showTyping(isBack ? 0 : 200);
+  await botMsg(bt, isBack ? 0 : 650);
+  setAlexState('idle');
+
+  if (s.type === 'opts') { showOpts(gv(s.opts), async choice => { history.push(idx); if(s.save) D[s.save]=choice; await userMsg(choice);
+    if (s.id === 'assure' && choice === 'Non') {
+      setAlexState('thinking'); await showTyping(200);
+      await botMsg('Pas de problème — nous prendrons en compte le profil sans bonus ni malus pour établir l\'étude. 👍', 650);
+      setAlexState('idle');
+    }
+    runStep(s.next(D)); }, s.id === 'doc_mode' ? 0 : undefined); }
+  else if (s.type === 'input') { showInput(s.ph, async val => {
+    history.push(idx);
+    if (s.capitalize) val = capitalizeName(val);
+    if (s.lowercase) val = val.toLowerCase().trim();
+    if(s.save) D[s.save]=val; await userMsg(val);
+    runStep(s.next(D)); }, false, s.validate||null, !!s.capitalize); }
+  else if (s.type === 'date') { const dtype = s.save==='date_permis'?'permis':s.save==='date_naissance'?'naissance':null; showDateInput(async val => { history.push(idx); if(s.save) D[s.save]=val; await userMsg(val); runStep(s.next(D)); }, dtype); }
+  else if (s.type === 'immat') { showImmat(async val => { history.push(idx); if(s.save) D[s.save]=val; await userMsg(val); runStep(s.next(D)); }); }
+  else if (s.type === 'phone') { showPhoneInput(async val => { history.push(idx); if(s.save) D[s.save]=normalizeFrenchPhone(val); await userMsg(val); runStep(s.next(D)); }); }
+  else if (s.type === 'textarea') { const ph = s.ph_fn ? s.ph_fn(D) : (s.ph||''); showInput(ph, async val => { history.push(idx); if(s.save) D[s.save]=val; await userMsg(val.length>60?val.slice(0,60)+'…':val); runStep(s.next(D)); }, true, 'textarea'); }
+  else if (s.type === 'address') { showAddress(async(label,cp,city) => { history.push(idx); D[s.save]=label; if(cp&&s.save_cp)D[s.save_cp]=cp; if(city&&s.save_ville)D[s.save_ville]=city; await userMsg(label); runStep(s.next(D)); }); }
+  else if (s.type === 'upload') {
+    const level = s.level_fn ? s.level_fn(D) : (s.level || null);
+    const skipText = s.skipText_fn ? s.skipText_fn(D) : (s.skipText || null);
+    showUpload(s.accept, s.save, s.save_url, s.optional, async(fname, url) => {
+      history.push(idx);
+      if (fname !== '(non fourni)') await userMsg('📎 ' + fname + (url ? ' ✓' : ''));
+      else await userMsg('Passer cette étape');
+      runStep(s.next(D));
+    }, level, skipText);
+  }
+  else if (s.type === 'multi_upload') {
+    showMultiUpload(s.accept, s.save, s.save_url, s.optional, async(names, urls) => {
+      history.push(idx);
+      if (names !== '(non fourni)') {
+        const count = names.split(',').length;
+        await userMsg('📎 ' + count + ' fichier(s) déposé(s) ✓');
+      } else { await userMsg('Passer cette étape'); }
+      runStep(s.next(D));
+    });
+  }
+}
+
+/* ── Init ── */
+document.addEventListener('DOMContentLoaded', async () => {
+  const cw = document.querySelector('.cw');
+
+  // Mode admin — bypass auth
+  if (ADMIN_MODE) {
+    ID_APPORTEUR = 'ADMIN_TEST';
+    NOM_APPORTEUR = 'Admin';
+    EMAIL_APPORTEUR = 'admin@test.fr';
+    document.getElementById('ch-sub').textContent = '⚙ MODE TEST ADMIN';
+    document.getElementById('ch-sub').style.color = 'var(--orange)';
+    runStep(0);
+    return;
+  }
+
+  // Pas de token → erreur
+  if (!TOKEN) {
+    cw.innerHTML = '<div class="error-banner"><i class="ti ti-alert-triangle" style="font-size:24px;display:block;margin-bottom:8px"></i><strong>Lien invalide</strong><br>Ce formulaire nécessite un lien personnalisé.<br>Contactez Easy Courtage Assurance pour obtenir votre accès.</div>';
+    return;
+  }
+
+  // Auth via token
+  setAlexState('thinking');
+  document.getElementById('ch-sub').textContent = 'Vérification en cours...';
+  const auth = await authApporteur(TOKEN);
+
+  if (!auth.success) {
+    setAlexState('idle');
+    localStorage.removeItem('alex_apporteur_token');
+    cw.innerHTML = '<div class="error-banner"><i class="ti ti-alert-triangle" style="font-size:24px;display:block;margin-bottom:8px"></i><strong>Accès refusé</strong><br>' + (auth.reason || 'Token invalide ou compte inactif.') + '<br><br><span style="font-size:12px;color:var(--tx2)">Contactez Easy Courtage Assurance si vous pensez qu\'il s\'agit d\'une erreur.</span></div>';
+    return;
+  }
+
+  // Auth OK → lancer le parcours
+  setAlexState('idle');
+  document.getElementById('ch-sub').textContent = 'Espace Apporteur — Easy Courtage';
+  runStep(0);
+});
+</script>
+</body>
+</html>
