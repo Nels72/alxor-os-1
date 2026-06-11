@@ -260,7 +260,11 @@ export interface MatchingResult {
   nb_eligibles: number;
 }
 
-export function runVehiculeMatching(prospect: Prospect): AISuggestion[] {
+export function runVehiculeMatching(
+  prospect: Prospect,
+  rulesOverride?: CompagnieVehiculeRule[]
+): AISuggestion[] {
+  const rules = rulesOverride ?? COMPAGNIES_VEHICULE;
   const data = prospect.product_data?.type === 'vehicule'
     ? prospect.product_data
     : {} as AutoProductData;
@@ -276,20 +280,20 @@ export function runVehiculeMatching(prospect: Prospect): AISuggestion[] {
   const confidence = Math.round((renseignes / champsClés.length) * 100);
 
   // Phase 1 : Éligibilité
-  const eligibles = COMPAGNIES_VEHICULE.filter(rule => {
+  const eligibles = rules.filter(rule => {
     const res = checkEligibilite(rule, data, ageConducteur);
     return res.eligible;
   });
 
   if (eligibles.length === 0) {
-    // Aucune compagnie éligible → retourner COVEA en fallback (risques lourds)
-    const covea = COMPAGNIES_VEHICULE.find(c => c.compagnie.includes('COVEA'));
-    if (!covea) return [];
-    eligibles.push(covea);
+    // Aucune compagnie éligible → retourner COVEA/dernier recours en fallback
+    const fallback = rules.find(c => c.eligible.accepte_resilie && c.eligible.bonus_max >= 3.0) ?? rules[rules.length - 1];
+    if (!fallback) return [];
+    eligibles.push(fallback);
   }
 
   // Phases 2 + 3 : Scoring
-  const scored = eligibles.map(rule => {
+  const scored = eligibles.map((rule) => {
     const appetence = calcAppetence(rule, data, ageConducteur);
     const composite = calcComposite(rule, appetence);
     const prime = estimatePrime(rule, data);

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import type { Prospect, AISuggestion } from '../types';
 import { calcAge, calcAnciennetePermis, isVehiculeProduct, type AutoProductData } from '../lib/prospectProductData';
-import { COMPAGNIES_VEHICULE } from '../lib/compagnieRules';
+import { useStore } from '../store';
 
 /** Formate une ancienneté en mois → "X ans Y mois" */
 function formatAnciennete(mois: number | null | undefined): string | undefined {
@@ -63,6 +63,7 @@ const InfoRow: React.FC<{ label: string; value: string | number | undefined | nu
 const FicheTarification: React.FC<FicheTarificationProps> = ({ prospect, suggestion, onClose, extranets }) => {
   const ficheRef = useRef<HTMLDivElement>(null);
   const [copiedAll, setCopiedAll] = useState(false);
+  const vehiculeRules = useStore((s) => s.vehiculeRules);
 
   const dossierFields = prospect.airtable_dossier_fields || {};
   const typeContrat = (prospect.type_contrat_demande || 'auto').toLowerCase();
@@ -236,7 +237,7 @@ const FicheTarification: React.FC<FicheTarificationProps> = ({ prospect, suggest
   // sinon dérivés dynamiquement de la base de connaissance véhicule.
   const defaultExtranets = extranets || (
     isAuto
-      ? COMPAGNIES_VEHICULE.map(c => ({ nom: c.compagnie, url: c.extranet_url }))
+      ? vehiculeRules.map(c => ({ nom: c.compagnie, url: c.extranet_url }))
       : []
   );
 

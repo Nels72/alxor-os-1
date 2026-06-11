@@ -90,8 +90,8 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
 
 ## Conventions de travail
 
-- **Secrets** : jamais en dur dans un fichier — toujours `.env` (`N8N_API_KEY`, `AIRTABLE_PAT`, `DROPBOX_*`, `GEMINI_API_KEY*`, `GITHUB_PERSONAL_ACCESS_TOKEN`) + `process.env` via dotenv dans les scripts.
-- **n8n** : toujours nœuds natifs plutôt que HTTP Request quand disponibles ; modifications via MCP n8n ; consulter les skills n8n avant. v2.52 : Code nodes sandboxés (pas de `fetch`/`require`/`this.helpers`) → ExtractFromFile pour binary→base64.
+- **Secrets** : jamais en dur dans un fichier — toujours `.env` (`AIRTABLE_PAT`, `DROPBOX_*`, `GEMINI_API_KEY*`, `GITHUB_PERSONAL_ACCESS_TOKEN`) + `process.env` via dotenv dans les scripts. Les tokens MCP (JWT n8n, PAT GitHub) sont dans `.mcp.json` et `~/.claude.json` (gitignoré).
+- **n8n** : toujours nœuds natifs plutôt que HTTP Request quand disponibles ; modifications via MCP n8n (outils : `search_workflows`, `get_workflow_details`, `execute_workflow`) ; consulter les skills n8n avant. MCP transport HTTP natif sur `https://n8n2.reaktimo.com/mcp-server/http`. v2.52 : Code nodes sandboxés (pas de `fetch`/`require`/`this.helpers`) → ExtractFromFile pour binary→base64.
 - **Gemini** : `gemini-2.5-flash` est un modèle à *thinking* → ne PAS mettre `maxOutputTokens` (JSON tronqué) ; utiliser `generationConfig: { response_mime_type: "application/json" }`.
 - **Make.com** : ne PAS modifier les blueprints JSON dans `ops/blueprints/` — uniquement via l'interface Make. Attachments optionnels : `{{ifempty(XX.field_url; emptyarray)}}`.
 - **Airtable** : accès direct API autorisé sans confirmation. Attention : un champ inexistant dans un PATCH → 422 qui annule tout. Plan gratuit : quota reset le 1er du mois (429 = attendre).
@@ -112,7 +112,10 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
 
 **Prochaines étapes connues :**
 0. **⚠️ Corriger le credential n8n « Header Auth account »** (Airtable) : son champ Name contient `Airtable_HTTP` au lieu de `Authorization` → tous les nœuds en credential seul reçoivent un 401. Conséquences : **Relance Docs Provisoires échoue chaque jour à 8h** (aucune relance envoyée), lookup Vapi en 401 silencieux, test e2e Yousign condamné à échouer. Diagnostic complet + config cible + plan de validation : `docs/DIAGNOSTIC_CREDENTIAL_AIRTABLE.md`. À corriger **avant** la rotation du PAT.
-1. **Base de connaissance compagnies** : collecter les fiches appétence dans Dropbox → extraction via Claude API dans n8n → remplir la table Airtable « one row per product » → brancher le moteur de matching dessus (remplace `lib/compagnieRules.ts`)
+1. **Base de connaissance compagnies** — état 2026-06-11 :
+   - **Front React : FAIT** — `services/produitsAirtable.ts` charge `Produits_CIE` → `CompagnieVehiculeRule[]` ; `matchingEngine.ts` accepte les règles en paramètre ; `store.ts` appelle `loadVehiculeRules()` au démarrage avec fallback sur `compagnieRules.ts` ; `FicheTarification.tsx` lit les règles depuis le store. Zéro erreur TS.
+   - **Bloquant** : ajouter les 15 champs d'éligibilité dans `Produits_CIE` (Airtable UI — liste exacte dans la session du 2026-06-11 ; PAT actuel sans scope `schema:write`). Une fois les champs créés, `fetchVehiculeRules()` prend le relais automatiquement.
+   - **À faire ensuite** : workflow n8n « Extraction Fiche Appétence » — lire PDF Dropbox via URL (`Dropbox_FP_URL`) → extraire texte → appel Claude API (`claude-opus-4-6`) avec prompt auto/moto/mrh selon `Type_Produit` → valider JSON → PATCH Airtable sur les 15 champs + `JSON_Extraction`. Prompts prêts dans `ops/.basedeconnaissance/prompts_extraction_appetence.md`.
 2. Matching DDA enrichi : axes véhicule/zone/usage, séparation appétence vs compétitivité, boucle de feedback sur la compagnie retenue
 3. **AGIRA FVA** (marque/modèle via immat) : spec prête, **bloqué étape 0** — certificat client mTLS à générer (CSR ORIAS 10058195 → `fva@agira.asso.fr`)
 4. Test e2e Yousign sandbox

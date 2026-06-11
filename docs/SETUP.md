@@ -1,6 +1,6 @@
 # SETUP — Reproduire l'environnement de travail Alxor sur une nouvelle machine
 
-> Mis à jour le 2026-06-11. Dépôt unique du projet : `Nels72/alxor-os-1`.
+> Mis à jour le 2026-06-11 (MCP n8n : migration vers transport HTTP natif). Dépôt unique du projet : `Nels72/alxor-os-1`.
 > Aucune valeur de clé/token n'est copiée ici : voir la section
 > [Credentials](#3-credentials--clés-api-et-tokens) pour la liste des secrets à récupérer,
 > et la section [Sécurité](#6--config-trouvée-en-dur--à-faire-pivoter) pour les secrets
@@ -29,32 +29,63 @@ Les MCP sont déclarés à **deux niveaux** (doublon volontaire — le niveau pr
 
 ### 2.1 Niveau utilisateur — `~/.claude.json` (clé `mcpServers`)
 
-| Serveur | Commande | Variables d'env du serveur | Instance/URL |
+| Serveur | Transport | Auth | Instance/URL |
 |---|---|---|---|
-| `github-mcp` | `npx -y @modelcontextprotocol/server-github` | `GITHUB_PERSONAL_ACCESS_TOKEN` | api.github.com |
-| `n8n-mcp` | `C:\Users\<user>\AppData\Roaming\npm\n8n-mcp.cmd` (install globale : `npm install -g n8n-mcp`) | `N8N_API_URL`, `N8N_API_KEY` | `https://n8n2.reaktimo.com/api/v1` |
+| `github-mcp` | stdio — `npx -y @modelcontextprotocol/server-github` | `GITHUB_PERSONAL_ACCESS_TOKEN` (fine-grained PAT `github_pat_…`) | api.github.com |
+| `n8n-mcp` | **HTTP natif** — connexion directe au serveur MCP intégré dans n8n | `Authorization: Bearer <JWT>` (généré dans n8n → Settings → MCP Server) | `https://n8n2.reaktimo.com/mcp-server/http` |
 
 ### 2.2 Niveau projet — `.mcp.json` (à la racine du repo, **gitignoré**)
 
-| Serveur | Commande | Variables d'env du serveur | Instance/URL |
-|---|---|---|---|
-| `n8n-mcp` | `npx -y n8n-mcp@latest` | `MCP_MODE=stdio`, `LOG_LEVEL=error`, `DISABLE_CONSOLE_OUTPUT=true`, `N8N_API_URL`, `N8N_API_KEY` | `https://n8n2.reaktimo.com/api/v1` |
-| `github-mcp` | `npx -y @modelcontextprotocol/server-github` | `GITHUB_PERSONAL_ACCESS_TOKEN` | api.github.com |
+Structure JSON effective (à recréer après clonage) :
 
-Les deux serveurs projet sont activés dans `~/.claude/settings.local.json` via
+```json
+{
+  "mcpServers": {
+    "github-mcp": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "<github_pat_…>"
+      }
+    },
+    "n8n-mcp": {
+      "url": "https://n8n2.reaktimo.com/mcp-server/http",
+      "headers": {
+        "Authorization": "Bearer <JWT n8n>"
+      }
+    }
+  }
+}
+```
+
+> **Pourquoi HTTP natif pour n8n ?** n8n intègre un serveur MCP depuis la version 1.x (`/mcp-server/http`). Le JWT est généré dans n8n → Settings → MCP Server API. Il est sans date d'expiration. Cette approche est préférable au wrapper npm `n8n-mcp@latest` : pas de dépendance npx, connexion directe, outillage plus riche.
+
+**Outils exposés par le MCP n8n natif :**
+
+| Outil | Rôle |
+|---|---|
+| `search_workflows` | Rechercher des workflows par nom/description |
+| `get_workflow_details` | Détails complets d'un workflow + infos trigger |
+| `execute_workflow` | Déclencher un workflow (modes : `chat`, `form`, `webhook`) |
+
+Les deux serveurs sont activés dans `~/.claude/settings.local.json` via
 `"enabledMcpjsonServers": ["github-mcp", "n8n-mcp"]`.
 
-**Commandes de déclaration équivalentes** (au lieu d'éditer les JSON à la main) :
+**Commande pour github-mcp** (au lieu d'éditer les JSON à la main) :
 
-```powershell
-# Niveau utilisateur
-claude mcp add github-mcp --scope user -e GITHUB_PERSONAL_ACCESS_TOKEN=<token> -- npx -y @modelcontextprotocol/server-github
-claude mcp add n8n-mcp --scope user -e N8N_API_URL=https://n8n2.reaktimo.com/api/v1 -e N8N_API_KEY=<clé> -- npx -y n8n-mcp@latest
+```bash
+# github-mcp — niveau utilisateur
+claude mcp add github-mcp --scope user \
+  -e GITHUB_PERSONAL_ACCESS_TOKEN=<github_pat_…> \
+  -- npx -y @modelcontextprotocol/server-github
 
-# Niveau projet (écrit dans .mcp.json)
-claude mcp add n8n-mcp --scope project -e MCP_MODE=stdio -e LOG_LEVEL=error -e DISABLE_CONSOLE_OUTPUT=true -e N8N_API_URL=https://n8n2.reaktimo.com/api/v1 -e N8N_API_KEY=<clé> -- npx -y n8n-mcp@latest
-claude mcp add github-mcp --scope project -e GITHUB_PERSONAL_ACCESS_TOKEN=<token> -- npx -y @modelcontextprotocol/server-github
+# github-mcp — niveau projet (écrit dans .mcp.json)
+claude mcp add github-mcp --scope project \
+  -e GITHUB_PERSONAL_ACCESS_TOKEN=<github_pat_…> \
+  -- npx -y @modelcontextprotocol/server-github
 ```
+
+Pour `n8n-mcp`, éditer `.mcp.json` directement (transport HTTP non supporté par `claude mcp add`).
 
 ---
 
@@ -64,8 +95,8 @@ claude mcp add github-mcp --scope project -e GITHUB_PERSONAL_ACCESS_TOKEN=<token
 
 | Nom | Sert à | Où le régénérer |
 |---|---|---|
-| `GITHUB_PERSONAL_ACCESS_TOKEN` | Auth du serveur MCP GitHub (repos, PRs, issues) | GitHub → Settings → Developer settings → Fine-grained PAT |
-| `N8N_API_KEY` | Auth API publique n8n (`https://n8n2.reaktimo.com/api/v1`), utilisée par n8n-mcp et les scripts `*.js` à la racine | n8n → Settings → API |
+| `GITHUB_PERSONAL_ACCESS_TOKEN` | Auth du serveur MCP GitHub (repos, PRs, issues) | GitHub → Settings → Developer settings → Fine-grained PAT (`github_pat_…`) |
+| **JWT n8n MCP** | Auth du serveur MCP natif n8n (`/mcp-server/http`) — Bearer token, sans expiration | n8n → Settings → MCP Server API → Créer une clé |
 | **Airtable PAT** (`pat…`) | Lecture/écriture directe sur la base CRM `apprtejZaap5ouqGm` (table prospects `tblh45gV9PZcN1fkz`) via API REST | airtable.com/create/tokens |
 | **Dropbox App key / App secret** (app `alxor-ged`, Full Dropbox) | OAuth2 client de l'app Dropbox utilisée pour la GED (renommage, recherche de fichiers) | Dropbox App Console |
 | **Dropbox refresh token** | Token longue durée pour obtenir des access tokens (scripts locaux + credential n8n) | Flow OAuth via `get-dropbox-refresh-token.js` |
@@ -79,19 +110,18 @@ Credentials stockées **côté n8n** (pas à reproduire sur la machine, mais à 
 ## 4. Variables d'environnement
 
 - **Aucune variable d'environnement système ou utilisateur Windows n'est utilisée pour les secrets.** (Les variables utilisateur existantes sont uniquement `Path`, `TEMP`, `TMP`, `OneDrive`, `ChocolateyLastPathUpdate`.)
-- Toutes les variables nécessaires aux MCP sont définies **inline** dans les blocs `env` des configs MCP :
-  - `~/.claude.json` → `mcpServers.github-mcp.env`, `mcpServers.n8n-mcp.env`
+- Les credentials MCP sont injectés directement dans les blocs `env` ou `headers` des configs :
+  - `~/.claude.json` → `mcpServers.github-mcp.env.GITHUB_PERSONAL_ACCESS_TOKEN`
+  - `~/.claude.json` → `mcpServers.n8n-mcp.headers.Authorization`
   - `.mcp.json` (racine projet) → idem
-- Variables consommées par les serveurs MCP :
+- Variables/headers consommés par les serveurs MCP :
 
-| Variable | Définie dans | Consommée par |
-|---|---|---|
-| `GITHUB_PERSONAL_ACCESS_TOKEN` | `~/.claude.json` et `.mcp.json` | `@modelcontextprotocol/server-github` |
-| `N8N_API_URL` | `~/.claude.json` et `.mcp.json` | `n8n-mcp` |
-| `N8N_API_KEY` | `~/.claude.json` et `.mcp.json` | `n8n-mcp` |
-| `MCP_MODE`, `LOG_LEVEL`, `DISABLE_CONSOLE_OUTPUT` | `.mcp.json` uniquement | `n8n-mcp` (mode stdio silencieux) |
+| Paramètre | Type | Défini dans | Consommé par |
+|---|---|---|---|
+| `GITHUB_PERSONAL_ACCESS_TOKEN` | env var | `~/.claude.json` et `.mcp.json` | `@modelcontextprotocol/server-github` |
+| `Authorization: Bearer <JWT>` | header HTTP | `~/.claude.json` et `.mcp.json` | Serveur MCP natif n8n (`/mcp-server/http`) |
 
-Il n'y a **pas de fichier `.env`** dans le projet : les scripts Node à la racine ont leurs tokens codés en dur (voir section 6 — à corriger).
+Il n'y a **pas de variable d'environnement système** pour les MCP. Le fichier `.env` (gitignoré) sert uniquement au front React (`REACT_APP_*`) et aux scripts Node (`ops/scripts/`).
 
 ---
 
@@ -154,13 +184,15 @@ Copier depuis l'ancienne machine (ou recréer) dans `C:\Users\<user>\.claude\` :
 
 ### Étape 5 — Déclarer les serveurs MCP
 
-1. Installer n8n-mcp en global (utilisé par la config niveau utilisateur) :
-   ```powershell
-   npm install -g n8n-mcp
-   ```
-2. Récupérer les secrets depuis le gestionnaire de mots de passe (**après rotation**, cf. section 6).
-3. Lancer les commandes `claude mcp add` de la section 2.2, ou recréer `.mcp.json` à la racine (il est gitignoré, donc absent du clone).
-4. Vérifier : `claude mcp list` puis, dans une session, l'outil `n8n_health_check`.
+> Aucun package npm global à installer — n8n-mcp utilise le transport HTTP natif.
+
+1. Récupérer les secrets depuis le gestionnaire de mots de passe (**après rotation**, cf. section 6) :
+   - PAT GitHub fine-grained (`github_pat_…`)
+   - JWT n8n MCP (généré dans n8n → Settings → MCP Server API)
+2. Recréer `.mcp.json` à la racine (gitignoré, absent du clone) avec la structure de la section 2.2.
+3. Ajouter la clé `mcpServers` dans `~/.claude.json` (même contenu que `.mcp.json`).
+4. Ajouter `"enabledMcpjsonServers": ["github-mcp", "n8n-mcp"]` dans `~/.claude/settings.local.json`.
+5. Vérifier : `claude mcp list` — les deux serveurs doivent apparaître. Dans une session, tester `search_workflows` pour confirmer la connexion n8n.
 
 ### Étape 6 — Configurer les credentials annexes
 
@@ -184,8 +216,9 @@ python -m venv venv
 ### Étape 8 — Vérification finale
 
 - `claude` dans le projet → les MCP `n8n-mcp` et `github-mcp` apparaissent connectés.
-- `n8n_health_check` répond OK sur `https://n8n2.reaktimo.com`.
-- Un appel Airtable de test (lecture base `apprtejZaap5ouqGm`) fonctionne avec le nouveau PAT.
+- Outil `search_workflows` → liste les workflows de l'instance `https://n8n2.reaktimo.com`.
+- Outil `get_workflow_details` sur `823xFRdz4SJSfv0R` → retourne les détails du workflow Extraction RI.
+- Un appel Airtable de test (lecture base `apprtejZaap5ouqGm`) fonctionne avec le PAT configuré dans `.env`.
 
 ---
 
@@ -193,13 +226,15 @@ python -m venv venv
 
 Les secrets suivants sont **écrits en clair** dans des fichiers de cette machine. Comme ils sont exposés (et certains dans des fichiers **non gitignorés**, donc commitables par erreur), il faut les **révoquer et regénérer tous**, puis nettoyer les fichiers.
 
-### Clé API n8n (`N8N_API_KEY`)
-- `~/.claude.json` (bloc `mcpServers`)
-- `.mcp.json` (gitignoré, mais en clair sur disque)
-- `~/.claude/settings.local.json` (dans 2 règles de permission `Bash(curl …)`)
-- Scripts dans `ops/scripts/` : `patch-dropbox-token.js`, `get-webhook-path.js`, `get-last-exec.js`, `test-full-response.js`, `fix-n8n-workflow.js`, `fix-dropbox-paths.js`, `update-dropbox-credentials.js`, `test-workflow.js`
+### JWT n8n MCP (`Authorization: Bearer …`)
+- `~/.claude.json` (bloc `mcpServers.n8n-mcp.headers`) — en clair sur disque, **gitignoré**
+- `.mcp.json` (racine projet) — gitignoré
 
-> **Note historique (pour mémoire) :** Un token n8n de l'ancienne instance `https://n8n2.srv1070115.hstgr.cloud` (JWT signé, délivré par cette instance) était présent en clair dans `.cursor/mcp.json` du repo `alxor-os-1`. Ce fichier a été retiré du suivi Git (`.cursor/` est maintenant gitignoré). L'ancienne instance est décommissionnée — le token est sans risque.
+Le JWT est spécifique au serveur MCP natif (`aud: "mcp-server-api"`). Il n'a **pas de date d'expiration** (`iat` uniquement, pas de `exp`). Il est sans risque s'il fuite en lecture seule, mais doit être régénéré si la machine est compromise.
+
+> **Note historique (pour mémoire) :** Un token n8n de l'ancienne instance `https://n8n2.srv1070115.hstgr.cloud` (JWT signé) était présent dans `.cursor/mcp.json` du repo `alxor-os-1`. Ce fichier a été retiré du suivi Git (`.cursor/` est maintenant gitignoré). L'ancienne instance est décommissionnée — sans risque.
+
+> **Note (scripts `ops/scripts/`)** : Plusieurs scripts JS référencent des tokens REST n8n codés en dur (ancienne approche). Ces scripts ne sont plus le canal principal d'interaction avec n8n (remplacé par le MCP). Ils sont à nettoyer lors de la rotation des credentials (cf. plan ci-dessous).
 
 ### Token GitHub (`GITHUB_PERSONAL_ACCESS_TOKEN`)
 - `~/.claude.json` (bloc `mcpServers`)

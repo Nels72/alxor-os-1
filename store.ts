@@ -8,6 +8,9 @@ import type { AirtableDocument } from './services/airtable';
 import { saveDDAPropositions, saveDDAChoixFinal } from './services/ddaService';
 import { runVehiculeMatching } from './lib/matchingEngine';
 import { VEHICULE_CODES } from './lib/prospectProductData';
+import type { CompagnieVehiculeRule } from './lib/compagnieRules';
+import { COMPAGNIES_VEHICULE } from './lib/compagnieRules';
+import { fetchVehiculeRules } from './services/produitsAirtable';
 
 const EMPTY_DOCS: string[] = [];
 
@@ -47,6 +50,8 @@ interface AppState {
   loadDocumentsForDossier: (dossierId: string) => Promise<void>;
   uploadDocReal: (dossierId: string, docType: string, label: string, file: File) => Promise<void>;
   qualifyDocReal: (documentId: string, dossierId: string, statut: 'Valide' | 'Provisoire', dateEcheance?: string) => Promise<void>;
+  vehiculeRules: CompagnieVehiculeRule[];
+  loadVehiculeRules: () => Promise<void>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -58,6 +63,7 @@ export const useStore = create<AppState>((set, get) => ({
   documentsGed: [],
   airtableDocuments: {},
   isAuthenticated: true,
+  vehiculeRules: COMPAGNIES_VEHICULE,
   lastConvertedClientId: null,
   clientNotes: {},
   reclamations: [
@@ -220,7 +226,7 @@ export const useStore = create<AppState>((set, get) => ({
     );
 
     const suggestions: AISuggestion[] = isVehicule
-      ? runVehiculeMatching(prospect)
+      ? runVehiculeMatching(prospect, get().vehiculeRules)
       : [
           // Fallback générique pour produits hors périmètre véhicule
           {
@@ -357,5 +363,18 @@ export const useStore = create<AppState>((set, get) => ({
         ),
       },
     }));
+  },
+
+  loadVehiculeRules: async () => {
+    try {
+      const rules = await fetchVehiculeRules();
+      if (rules) {
+        set({ vehiculeRules: rules });
+        console.log(`[matching] ${rules.length} règles chargées depuis Airtable Produits_CIE`);
+      }
+      // Si null → champs pas encore créés → on garde COMPAGNIES_VEHICULE (état initial)
+    } catch (err) {
+      console.warn('[matching] Impossible de charger Produits_CIE, fallback règles locales:', err);
+    }
   },
 }));

@@ -1,5 +1,5 @@
 // Mise à jour du routage - Version 1.0
-import React from 'react';
+import React, { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LandingPage from './Pages/LandingPage';
 import Dashboard from './Pages/Dashboard';
@@ -17,6 +17,12 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 };
 
 const App: React.FC = () => {
+  const loadVehiculeRules = useStore((s) => s.loadVehiculeRules);
+
+  useEffect(() => {
+    loadVehiculeRules();
+  }, [loadVehiculeRules]);
+
   return (
     <HashRouter>
       <div className="min-h-screen bg-[#121417] text-[#F8F9FA]">
