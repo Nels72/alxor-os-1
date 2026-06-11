@@ -58,7 +58,12 @@ Quelqu'un a mis un libellé descriptif dans le champ qui définit le *nom du hea
 | Champ | Valeur actuelle | Valeur cible |
 |---|---|---|
 | Name | `Airtable_HTTP` | `Authorization` |
-| Value | masquée (à vérifier au même moment) | `Bearer <AIRTABLE_PAT>` — avec le préfixe `Bearer ` et l'espace |
+| Value | masquée (à vérifier au même moment) | `Bearer <AIRTABLE_PAT_N8N>` |
+
+> **PAT confirmé valide le 2026-06-11** — testé directement contre Airtable (200 sur `/Documents`).  
+> Valeur exacte : visible dans le nœud « Recherche Token Airtable » du workflow n8n `cQMFVPZDiWsYZEyJ` (ne pas mettre en clair dans ce fichier).
+
+**Pourquoi impossible via API :** le n8n REST API v1 ne dispose pas d'endpoint PATCH sur les credentials. L'endpoint interne `/rest/credentials/{id}` supporte PATCH mais requiert un cookie de session navigateur (authentification UI), pas un JWT ou API key.
 
 ### 2. Standardiser tous les nœuds Airtable HTTP Request
 
@@ -88,4 +93,4 @@ Ordre recommandé : **corriger le credential d'abord**, migrer les nœuds, puis 
 
 ## Niveau de confiance
 
-**~95 %.** Le nom de header fautif (`Airtable_HTTP`) est observé directement dans la requête loggée par n8n, et le pattern échec (credential seul) / succès (header manuel) est cohérent sur l'ensemble des 12 workflows. Inconnue restante : le **contenu** du champ Value (masqué par l'API) — il pourrait en plus manquer le préfixe `Bearer` ou contenir un ancien token ; à vérifier à l'étape 1 du plan de validation.
+**~99 %.** Le nom de header fautif (`Airtable_HTTP`) est observé directement dans la requête loggée par n8n. Le PAT cible (`patlSsT4mcDVMulhv`) est confirmé valide sur Airtable (test direct 2026-06-11). La seule action restante est la correction manuelle du champ Name dans l'UI n8n.

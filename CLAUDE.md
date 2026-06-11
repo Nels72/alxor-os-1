@@ -111,11 +111,17 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
 - Fusion des dépôts `alxor-os` et `alxor-os-1` en repo unique (`alxor-os-1`) — 2026-06-11
 
 **Prochaines étapes connues :**
-0. **⚠️ Corriger le credential n8n « Header Auth account »** (Airtable) : son champ Name contient `Airtable_HTTP` au lieu de `Authorization` → tous les nœuds en credential seul reçoivent un 401. Conséquences : **Relance Docs Provisoires échoue chaque jour à 8h** (aucune relance envoyée), lookup Vapi en 401 silencieux, test e2e Yousign condamné à échouer. Diagnostic complet + config cible + plan de validation : `docs/DIAGNOSTIC_CREDENTIAL_AIRTABLE.md`. À corriger **avant** la rotation du PAT.
+0. **⚠️ Corriger le credential n8n « Header Auth account »** (Airtable) — **correction UI requise** :
+   - Aller dans n8n UI → Credentials → « Header Auth account » (`vsMFMN5O6M4G7eMB`)
+   - Champ **Name** : `Airtable_HTTP` → **`Authorization`**
+   - Champ **Value** : vérifier/mettre `Bearer <AIRTABLE_PAT_N8N>` — PAT identifié et confirmé valide 2026-06-11 (visible dans le nœud « Recherche Token Airtable » du workflow `cQMFVPZDiWsYZEyJ`)
+   - Impossible via API : n8n REST API v1 n'a pas d'endpoint PATCH credentials ; `/rest/credentials/{id}` requiert cookie de session navigateur
+   - Après correction : lancer exécution manuelle nœud `Query Docs Provisoires` (GET sans effet de bord) → attendu 200
+   - Diagnostic complet : `docs/DIAGNOSTIC_CREDENTIAL_AIRTABLE.md`
 1. **Base de connaissance compagnies** — état 2026-06-11 :
+   - **Schéma Airtable : FAIT** — 15 champs créés dans `Produits_CIE` via PAT n8n (`patlSsT4mcDVMulhv`). Seul `Motifs_Resilie_Exclus` à compléter : ajouter les 4 choices manquants dans l'UI (`fausse_declaration`, `sinistralite`, `vol`, `resil_mutuelle`).
    - **Front React : FAIT** — `services/produitsAirtable.ts` charge `Produits_CIE` → `CompagnieVehiculeRule[]` ; `matchingEngine.ts` accepte les règles en paramètre ; `store.ts` appelle `loadVehiculeRules()` au démarrage avec fallback sur `compagnieRules.ts` ; `FicheTarification.tsx` lit les règles depuis le store. Zéro erreur TS.
-   - **Bloquant** : ajouter les 15 champs d'éligibilité dans `Produits_CIE` (Airtable UI — liste exacte dans la session du 2026-06-11 ; PAT actuel sans scope `schema:write`). Une fois les champs créés, `fetchVehiculeRules()` prend le relais automatiquement.
-   - **À faire ensuite** : workflow n8n « Extraction Fiche Appétence » — lire PDF Dropbox via URL (`Dropbox_FP_URL`) → extraire texte → appel Claude API (`claude-opus-4-6`) avec prompt auto/moto/mrh selon `Type_Produit` → valider JSON → PATCH Airtable sur les 15 champs + `JSON_Extraction`. Prompts prêts dans `ops/.basedeconnaissance/prompts_extraction_appetence.md`.
+   - **À faire** : workflow n8n « Extraction Fiche Appétence » — lire PDF Dropbox via `Dropbox_FP_URL` → extraire texte → appel Claude API (`claude-opus-4-6`) avec prompt auto/moto/mrh selon `Type_Produit` → valider JSON → PATCH Airtable sur les 15 champs + `JSON_Extraction`. Prompts prêts dans `ops/.basedeconnaissance/prompts_extraction_appetence.md`. Puis peupler le record AXA "Mon Auto" pour valider end-to-end.
 2. Matching DDA enrichi : axes véhicule/zone/usage, séparation appétence vs compétitivité, boucle de feedback sur la compagnie retenue
 3. **AGIRA FVA** (marque/modèle via immat) : spec prête, **bloqué étape 0** — certificat client mTLS à générer (CSR ORIAS 10058195 → `fva@agira.asso.fr`)
 4. Test e2e Yousign sandbox
