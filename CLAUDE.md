@@ -119,13 +119,11 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
   - **Déploiement serveur** : `install.sh` prêt pour `n8n2.reaktimo.com` — À faire (SSH requis)
 
 **Prochaines étapes connues :**
-0. **⚠️ Corriger le credential n8n « Header Auth account »** (Airtable) — **correction UI requise** :
-   - Aller dans n8n UI → Credentials → « Header Auth account » (`vsMFMN5O6M4G7eMB`)
-   - Champ **Name** : `Airtable_HTTP` → **`Authorization`**
-   - Champ **Value** : vérifier/mettre `Bearer <AIRTABLE_PAT_N8N>` — PAT identifié et confirmé valide 2026-06-11 (visible dans le nœud « Recherche Token Airtable » du workflow `cQMFVPZDiWsYZEyJ`)
-   - Impossible via API : n8n REST API v1 n'a pas d'endpoint PATCH credentials ; `/rest/credentials/{id}` requiert cookie de session navigateur
-   - Après correction : lancer exécution manuelle nœud `Query Docs Provisoires` (GET sans effet de bord) → attendu 200
-   - Diagnostic complet : `docs/DIAGNOSTIC_CREDENTIAL_AIRTABLE.md`
+0. ~~Corriger le credential n8n « Header Auth account »~~ — **FAIT 2026-06-12 via API** :
+   - `PATCH /rest/credentials/vsMFMN5O6M4G7eMB` avec cookie de session (`POST /rest/login`) — l'API REST interne accepte bien le PATCH credentials avec un cookie navigateur
+   - Name : `Airtable_HTTP` → `Authorization` (vérifié en relecture) ; Value : `Bearer <PAT n8n>` (PAT testé 200 sur l'URL exacte du nœud `Query Docs Provisoires`)
+   - Reste à confirmer au prochain run planifié (8h quotidien) du workflow « Relance Docs Provisoires » (`BDEwnCPsP8aWgIkd`) — l'endpoint `/rest/workflows/{id}/run` de cette version n8n refuse l'exécution partielle par API
+   - Diagnostic d'origine : `docs/DIAGNOSTIC_CREDENTIAL_AIRTABLE.md`
 1. **Base de connaissance compagnies** — état 2026-06-11 :
    - **Schéma Airtable : FAIT** — 15 champs créés dans `Produits_CIE` via PAT n8n (`patlSsT4mcDVMulhv`). Seul `Motifs_Resilie_Exclus` à compléter : ajouter les 4 choices manquants dans l'UI (`fausse_declaration`, `sinistralite`, `vol`, `resil_mutuelle`).
    - **Front React : FAIT** — `services/produitsAirtable.ts` charge `Produits_CIE` → `CompagnieVehiculeRule[]` ; `matchingEngine.ts` accepte les règles en paramètre ; `store.ts` appelle `loadVehiculeRules()` au démarrage avec fallback sur `compagnieRules.ts` ; `FicheTarification.tsx` lit les règles depuis le store. Zéro erreur TS.
