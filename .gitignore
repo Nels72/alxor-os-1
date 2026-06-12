@@ -44,3 +44,9 @@ backups/
 Thumbs.db
 .bash_history
 .lesshst
+
+# Python virtual environments
+ops/presidio/venv/
+**/__pycache__/
+*.pyc
+*.pyo

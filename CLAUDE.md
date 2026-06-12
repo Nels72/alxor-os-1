@@ -99,16 +99,24 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
 - **Front Cabinet** : développé dans la racine de ce repo (React 19 + Vite + Tailwind).
 - Gmail v2.2 (n8n) : `sendTo` (pas `toList`), `emailType`.
 
-## État d'avancement (2026-06-11)
+## État d'avancement (2026-06-12)
 
 **Fait et en production :**
 - Flux lead chatbot end-to-end (Web + Apporteur) : création Airtable → distribution lead → extraction RI → renommage GED → email courtier enrichi
 - Chatbot Apporteur v1 (PWA Netlify, 2 apporteurs onboardés : Martins, Mssihid) ; Alex Web v11
-- Parcours Cabinet : création prospect (SIRET lookup), upload + qualification docs, extraction RI synchrone, extraction devis, génération FIC PDF (8 produits), relance auto docs provisoires (J-7/J-1/post-échéance — ⚠️ **en panne**, cf. ci-dessous), matching local 7 compagnies (règles TS), fiche tarification Auto/Moto — **prêt à push** côté front
+- Parcours Cabinet : création prospect (SIRET lookup), upload + qualification docs, extraction RI synchrone, extraction devis, génération FIC PDF (8 produits), relance auto docs provisoires (J-7/J-1/post-échéance — ⚠️ **en panne**, cf. ci-dessous), matching local 7 compagnies (règles TS), fiche tarification Auto/Moto
 - Workflow Yousign double signature (devis+FIC puis contrat) ACTIF — en attente test e2e sandbox
-- Audit cybersécurité (3 étapes) + API Presidio locale ; secrets du repo nettoyés vers `.env` (rotation à faire, cf. `docs/SETUP.md` §6)
+- Audit cybersécurité (3 étapes) + **API Presidio locale opérationnelle** (voir ci-dessous) ; secrets du repo nettoyés vers `.env` (rotation à faire, cf. `docs/SETUP.md` §6)
 - Prompts d'extraction fiches appétence rédigés (`ops/.basedeconnaissance/`)
 - Fusion des dépôts `alxor-os` et `alxor-os-1` en repo unique (`alxor-os-1`) — 2026-06-11
+- **Presidio RGPD — FAIT 2026-06-12** : API d'anonymisation PII française opérationnelle localement :
+  - `venv` installé (`ops/presidio/venv/`), modèles `fr_core_news_lg` + `fr_core_news_md` téléchargés
+  - 6 recognizers FR personnalisés : immatriculation (conservée), permis, SIRET, CNI, téléphone, date de naissance
+  - Filtres faux-positifs : noms de compagnie protégés, labels de formulaire filtrés, dates contrat ≠ dates naissance, second passage de remplacement pour occurrences multiples
+  - Tests PASS : 8/8 vérifications sur données RI réelles (DUPONT anonymisé, FG-456-HJ conservé, bonus/malus conservé)
+  - Démarrage local : `cd ops/presidio && ./start_local.sh` → port 5080
+  - **Intégration n8n** : voir `ops/presidio/N8N_INTEGRATION.md` — nœuds HTTP Request à ajouter dans les 3 workflows (Extraction RI, Extraction Devis, Extraction RI Cabinet)
+  - **Déploiement serveur** : `install.sh` prêt pour `n8n2.reaktimo.com` — À faire (SSH requis)
 
 **Prochaines étapes connues :**
 0. **⚠️ Corriger le credential n8n « Header Auth account »** (Airtable) — **correction UI requise** :

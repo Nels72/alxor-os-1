@@ -83,12 +83,24 @@ FALSE_POSITIVE_ALLOWLIST = {
     "en cours", "resilie", "actif", "inactif", "null",
     # Misc short codes
     "true", "false",
+    # RI form labels tagged as PERSON by spaCy
+    "adresse", "nom", "prenom", "souscripteur", "assure",
+    "conducteur", "principal", "secondaire", "emetteur",
+    # Misc false positives observed on real RI data
+    "nee", "nee le", "ne le",
 }
 
 # Minimum length for LOCATION entities to avoid matching short codes
 LOCATION_MIN_LENGTH = 4
 # Maximum length for a single LOCATION entity (real addresses rarely > 80 chars)
 LOCATION_MAX_LENGTH = 80
+
+# Minimum length for PERSON entities
+PERSON_MIN_LENGTH = 3
+
+# Regex patterns that indicate a LOCATION is actually a contract/code (not an address)
+_CONTRACT_NUMBER_RE = re.compile(r'^[A-Z]+-\d{4}', re.IGNORECASE)
+_DATE_LABEL_RE = re.compile(r"^date\s+d['’]", re.IGNORECASE)
 
 # Insurance company names that contain location words but should NOT be anonymized
 COMPANY_NAMES = {
@@ -131,21 +143,17 @@ def post_filter_results(results, text):
             continue
 
         # Rule 6: Skip if the detected text is literally part of a known company name
-        # e.g. "France" from "AXA France IARD" — check if the entity span
-        # falls inside a company name occurrence in the text
         if r.entity_type in ("LOCATION", "PERSON"):
             is_inside_company = False
             text_lower = text.lower()
             for company in COMPANY_NAMES:
                 if len(company) <= len(original_lower):
-                    continue  # Skip shorter company names
-                # Find all occurrences of this company name in the text
+                    continue
                 idx = 0
                 while True:
                     pos = text_lower.find(company, idx)
                     if pos == -1:
                         break
-                    # Check if entity span is inside this company name span
                     if pos <= r.start and r.end <= pos + len(company):
                         is_inside_company = True
                         break
@@ -154,6 +162,26 @@ def post_filter_results(results, text):
                     break
             if is_inside_company:
                 continue
+
+        # Rule 7: Skip PERSON entities containing a newline (spaCy NER multiline error)
+        if r.entity_type == "PERSON" and "\n" in original:
+            continue
+
+        # Rule 8: Skip PERSON entities starting with punctuation/dash (NER boundary error)
+        if r.entity_type == "PERSON" and original.lstrip().startswith(("-", ".", ":")):
+            continue
+
+        # Rule 9: Skip very short PERSON entities
+        if r.entity_type == "PERSON" and len(original.strip()) < PERSON_MIN_LENGTH:
+            continue
+
+        # Rule 10: Skip LOCATION that looks like a contract/reference number (e.g. AUTO-2024)
+        if r.entity_type == "LOCATION" and _CONTRACT_NUMBER_RE.match(original.strip()):
+            continue
+
+        # Rule 11: Skip LOCATION that starts with "Date d'" (form label, not a place)
+        if r.entity_type == "LOCATION" and _DATE_LABEL_RE.match(original.strip()):
+            continue
 
         filtered.append(r)
     return filtered
@@ -257,6 +285,8 @@ def create_french_recognizers():
     )
 
     # 4. French date of birth (DD/MM/YYYY near birth context)
+    # Score 0.25 = below threshold without context; context boost raises it above 0.4
+    # Year range 1930-2020 limits to plausible birth years (not contract/sinistre dates)
     recognizers.append(
         PatternRecognizer(
             supported_entity="DATE_OF_BIRTH",
@@ -265,13 +295,13 @@ def create_french_recognizers():
             patterns=[
                 Pattern(
                     name="dob_fr",
-                    regex=r"\b(0[1-9]|[12]\d|3[01])/(0[1-9]|1[0-2])/((?:19|20)\d{2})\b",
-                    score=0.4,
+                    regex=r"\b(0[1-9]|[12]\d|3[01])/(0[1-9]|1[0-2])/((?:19[3-9]\d|200\d|201\d|202[0-5]))\b",
+                    score=0.25,
                 ),
             ],
             context=[
                 "ne", "nee", "naissance", "date de naissance",
-                "anniversaire", "souscripteur", "conducteur",
+                "anniversaire", "souscripteur", "conducteur", "titulaire",
             ],
         )
     )
@@ -551,6 +581,12 @@ def anonymize_text():
         anonymized = anonymized[:result.start] + placeholder + anonymized[result.end:]
         mapping[placeholder] = original
 
+    # Second pass: replace any remaining literal occurrences of detected values
+    # (NER may miss duplicates; regex recognizers may miss instances without context)
+    for placeholder, original in reverse_mapping.items():
+        if original and original not in ("null", "true", "false") and len(original) >= PERSON_MIN_LENGTH:
+            anonymized = anonymized.replace(original, placeholder)
+
     # Generate a unique mapping ID for deanonymization
     mapping_id = str(uuid.uuid4())
     mapping_store[mapping_id] = reverse_mapping
@@ -747,6 +783,11 @@ def anonymize_for_gemini():
             reverse_mapping[placeholder] = original
 
         anonymized = anonymized[:result.start] + placeholder + anonymized[result.end:]
+
+    # Second pass: sweep for remaining literal occurrences of detected values
+    for placeholder, original in reverse_mapping.items():
+        if original and len(original) >= PERSON_MIN_LENGTH:
+            anonymized = anonymized.replace(original, placeholder)
 
     mapping_id = str(uuid.uuid4())
     mapping_store[mapping_id] = reverse_mapping
