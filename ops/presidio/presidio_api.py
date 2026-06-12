@@ -201,13 +201,26 @@ logger = logging.getLogger("presidio-alxor")
 # ---------------------------------------------------------------------------
 
 
+def _detect_spacy_model() -> str:
+    """Return the best available French spaCy model without triggering auto-download."""
+    override = os.getenv("PRESIDIO_SPACY_MODEL", "")
+    if override:
+        return override
+    import spacy.util
+    for model in ("fr_core_news_lg", "fr_core_news_md", "fr_core_news_sm"):
+        if spacy.util.is_package(model):
+            return model
+    return "fr_core_news_md"  # last resort — will fail clearly if missing
+
+
 def create_nlp_engine():
     """Create spaCy NLP engine configured for French."""
+    model_name = _detect_spacy_model()
+    logger.info(f"Loading spaCy model: {model_name}")
     configuration = {
         "nlp_engine_name": "spacy",
         "models": [
-            {"lang_code": "fr", "model_name": "fr_core_news_lg"},
-            {"lang_code": "en", "model_name": "en_core_web_lg"},
+            {"lang_code": "fr", "model_name": model_name},
         ],
     }
     provider = NlpEngineProvider(nlp_configuration=configuration)
@@ -354,21 +367,8 @@ def create_french_recognizers():
 
 logger.info("Initializing Presidio engines...")
 
-try:
-    nlp_engine = create_nlp_engine()
-    logger.info("NLP engine created (fr_core_news_lg + en_core_web_lg)")
-except Exception as e:
-    logger.warning(f"Failed to load full models, trying smaller models: {e}")
-    # Fallback to smaller models
-    configuration = {
-        "nlp_engine_name": "spacy",
-        "models": [
-            {"lang_code": "fr", "model_name": "fr_core_news_md"},
-        ],
-    }
-    provider = NlpEngineProvider(nlp_configuration=configuration)
-    nlp_engine = provider.create_engine()
-    logger.info("NLP engine created with fallback model (fr_core_news_md)")
+nlp_engine = create_nlp_engine()
+logger.info("NLP engine initialized")
 
 # Create registry and add custom recognizers
 registry = RecognizerRegistry(supported_languages=["fr", "en"])

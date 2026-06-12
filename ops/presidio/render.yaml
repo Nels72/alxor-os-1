@@ -7,6 +7,8 @@ services:
     startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 120 presidio_api:app
     plan: free
     envVars:
+      - key: PRESIDIO_SPACY_MODEL
+        value: fr_core_news_md
       - key: PRESIDIO_LOG_LEVEL
         value: WARNING
       - key: PRESIDIO_SCORE_THRESHOLD
