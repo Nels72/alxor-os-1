@@ -39,7 +39,7 @@ from presidio_anonymizer.entities import OperatorConfig
 # Configuration
 # ---------------------------------------------------------------------------
 
-PORT = int(os.getenv("PRESIDIO_PORT", "5080"))
+PORT = int(os.getenv("PORT", os.getenv("PRESIDIO_PORT", "5080")))
 HOST = os.getenv("PRESIDIO_HOST", "0.0.0.0")
 LOG_LEVEL = os.getenv("PRESIDIO_LOG_LEVEL", "INFO")
 SCORE_THRESHOLD = float(os.getenv("PRESIDIO_SCORE_THRESHOLD", "0.4"))
@@ -409,6 +409,13 @@ def generate_placeholder(entity_type: str, counter: dict) -> str:
     count = counter.get(entity_type, 0) + 1
     counter[entity_type] = count
     return f"[{entity_type}_{count}]"
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    import traceback
+    logger.error(f"Unhandled exception in request: {traceback.format_exc()}")
+    return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
 @app.route("/health", methods=["GET"])
