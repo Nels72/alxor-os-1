@@ -11,8 +11,20 @@ import { VEHICULE_CODES } from './lib/prospectProductData';
 import type { CompagnieVehiculeRule } from './lib/compagnieRules';
 import { COMPAGNIES_VEHICULE } from './lib/compagnieRules';
 import { fetchVehiculeRules } from './services/produitsAirtable';
+import type { Collaborateur } from './services/collaborateursAirtable';
 
 const EMPTY_DOCS: string[] = [];
+
+const COLLAB_STORAGE_KEY = 'alxor_current_collaborateur';
+
+function loadStoredCollaborateur(): Collaborateur | null {
+  try {
+    const raw = localStorage.getItem(COLLAB_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Collaborateur) : null;
+  } catch {
+    return null;
+  }
+}
 
 interface AppState {
   user: User | null;
@@ -52,6 +64,12 @@ interface AppState {
   qualifyDocReal: (documentId: string, dossierId: string, statut: 'Valide' | 'Provisoire', dateEcheance?: string) => Promise<void>;
   vehiculeRules: CompagnieVehiculeRule[];
   loadVehiculeRules: () => Promise<void>;
+  /** Collaborateur sélectionné via le sélecteur de profil (V1) — Admin voit tout */
+  currentCollaborateur: Collaborateur | null;
+  setCurrentCollaborateur: (c: Collaborateur | null) => void;
+  /** Portée d'affichage de la file de production */
+  viewScope: 'mes_dossiers' | 'tous';
+  setViewScope: (scope: 'mes_dossiers' | 'tous') => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -96,6 +114,19 @@ export const useStore = create<AppState>((set, get) => ({
 
   login: () => set({ isAuthenticated: true, user: mockUser }),
   logout: () => set({ isAuthenticated: false, user: null }),
+
+  currentCollaborateur: loadStoredCollaborateur(),
+  setCurrentCollaborateur: (c) => {
+    try {
+      if (c) localStorage.setItem(COLLAB_STORAGE_KEY, JSON.stringify(c));
+      else localStorage.removeItem(COLLAB_STORAGE_KEY);
+    } catch {
+      // stockage indisponible (navigation privée) — état mémoire uniquement
+    }
+    set({ currentCollaborateur: c, viewScope: 'mes_dossiers' });
+  },
+  viewScope: 'mes_dossiers',
+  setViewScope: (scope) => set({ viewScope: scope }),
 
   playNewLeadSound: () => {
     const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');

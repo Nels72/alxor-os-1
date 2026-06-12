@@ -9,12 +9,10 @@ import {
   DollarSign, 
   TrendingUp, 
   Clock, 
-  MoreHorizontal,
   ChevronRight,
   ChevronDown,
   ChevronUp,
   Search,
-  Filter,
   FileText,
   ShieldCheck,
   Download,
@@ -30,7 +28,6 @@ import {
   Zap,
   ExternalLink,
   Target,
-  Award,
   CheckCircle,
   Phone,
   Building2,
@@ -43,12 +40,33 @@ import {
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useStore } from '../store';
 import { getProductLabel } from '../lib/productCatalog';
-import { PriorityLevel, Client, Contrat, Amendment } from '../types';
+import { PriorityLevel, Client, Contrat, Amendment, Prospect } from '../types';
 import {
   listDossierRecords,
   mapDossiersBatch,
+  collectMissingDocumentLabels,
 } from '../services/dossiersAirtable';
 import { resetRateLimiter } from '../services/airtable';
+import {
+  PipelineStage,
+  STAGE_LABELS,
+  getPipelineStage,
+  getComputedPriority,
+  getAlerts,
+  sortByPriority,
+  groupByStage,
+  isDdaDone,
+  getAgeJours,
+  getInactiviteJours,
+  getSourceLabel,
+  getApporteurName,
+  SEUIL_INACTIVITE_J,
+} from '../lib/pipeline';
+import {
+  listCollaborateurs,
+  reprendreDossier,
+  Collaborateur,
+} from '../services/collaborateursAirtable';
 
 /** Cache Dashboard : évite de recharger Airtable à chaque navigation */
 let dashboardCache: { data: import('../types').Prospect[]; ts: number } | null = null;
@@ -160,20 +178,6 @@ const CHART_DATA = [
   { name: 'Mai', val: 14500 },
 ];
 
-const STATUS_COLORS: Record<string, string> = {
-  nouveau: 'bg-blue-50 text-blue-500 border border-blue-100',
-  en_analyse: 'bg-orange-50 text-orange-500 border border-orange-100',
-  devis_envoye: 'bg-cyan-50 text-cyan-500 border border-cyan-100',
-  converti: 'bg-green-50 text-green-500 border border-green-100',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  nouveau: 'NOUVEAU',
-  en_analyse: 'EN ANALYSE',
-  devis_envoye: 'ATTENTE RETOUR SIGNÉ',
-  converti: 'CONVERTI',
-};
-
 const PRIORITY_BADGE: Record<PriorityLevel, string> = {
   Critique: 'bg-red-50 text-red-600 border-red-100',
   Haute: 'bg-orange-50 text-orange-600 border-orange-100',
@@ -198,12 +202,13 @@ const Dashboard: React.FC = () => {
   );
   const clients = useStore(state => state.clients);
   const contracts = useStore(state => state.contracts);
-  const generateFicheConseil = useStore(state => state.generateFicheConseil);
   const lastConvertedClientId = useStore(state => state.lastConvertedClientId);
   const clearLastConvertedClientId = useStore(state => state.clearLastConvertedClientId);
   const clientNotes = useStore(state => state.clientNotes);
   const setClientNotes = useStore(state => state.setClientNotes);
-  const updateContrat = useStore(state => state.updateContrat);
+  const currentCollaborateur = useStore(state => state.currentCollaborateur);
+  const viewScope = useStore(state => state.viewScope);
+  const setViewScope = useStore(state => state.setViewScope);
 
   const [airtableLoading, setAirtableLoading] = useState(false);
   const [airtableError, setAirtableError] = useState<string | null>(null);
@@ -215,7 +220,7 @@ const Dashboard: React.FC = () => {
     ));
 
   useEffect(() => {
-    if (tab !== 'prospects') return;
+    if (tab !== 'prospects' && tab !== 'overview') return;
     if (!airtableConfigured) return;
 
     // Si le cache est encore frais, on l'utilise directement (0 appel API)
@@ -264,23 +269,6 @@ const Dashboard: React.FC = () => {
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
   const [searchHighlight, setSearchHighlight] = useState<{ clientId: string; contractId?: string; avenantIndex?: number; phase: 'avenant' | 'contract' } | null>(null);
 
-  /** Extraction IA Phase 3 à l'ouverture (AUTO → Immatriculation, MRH/MRP → Adresse du Risque) */
-  useEffect(() => {
-    if (!expandedClientId) return;
-    const clientCon = contracts.filter((c) => c.client_id === expandedClientId);
-    clientCon.forEach((con) => {
-      const t = (con.type_contrat || '').toUpperCase();
-      const isAUTO = t.includes('AUTO') || t === 'AUTOMOBILE';
-      const isMRHMRP = t.includes('MRH') || t.includes('MRP') || t.includes('HABITATION') || (t.includes('PRO') && t.includes('MULTIRISQUE'));
-      if (isAUTO && !con.immatriculation) {
-        updateContrat(con.id, { immatriculation: `AB-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 4).toUpperCase()}` });
-      }
-      if (isMRHMRP && !con.adresse_risque) {
-        updateContrat(con.id, { adresse_risque: '12 Rue du Louvre, 75001 Paris' });
-      }
-    });
-  }, [expandedClientId, contracts, updateContrat]);
-
   useEffect(() => {
     if (!lastConvertedClientId) return;
     const t = setTimeout(clearLastConvertedClientId, 3000);
@@ -289,6 +277,106 @@ const Dashboard: React.FC = () => {
 
   const countProvisoires = useMemo(() => prospects.filter(p => p.documents_provisoires && Object.keys(p.documents_provisoires).length > 0).length, [prospects]);
   const gesMoyen = useMemo(() => prospects.length ? Math.round(prospects.reduce((s, p) => s + p.ges_score, 0) / prospects.length) : 0, [prospects]);
+
+  // ----- File de production : sous-onglets par étape du pipeline -----
+  const [stageTab, setStageTab] = useState<PipelineStage>('a_traiter');
+  const [prospectSearch, setProspectSearch] = useState('');
+  const [collaborateurs, setCollaborateurs] = useState<Collaborateur[]>([]);
+  const [reprendreEnCours, setReprendreEnCours] = useState<string | null>(null);
+
+  useEffect(() => {
+    listCollaborateurs()
+      .then(setCollaborateurs)
+      .catch((err) => console.error('[Collaborateurs] Échec chargement:', err));
+  }, []);
+
+  /** Titulaire (premier collaborateur assigné) d'un dossier */
+  const getTitulaire = (p: Prospect): Collaborateur | null => {
+    const id = p.collaborateur_ids?.[0];
+    if (!id) return null;
+    return collaborateurs.find((c) => c.id === id) || null;
+  };
+
+  /** Dossiers du flux (les convertis GES 100 sortent vers le Portefeuille Client) */
+  const fluxProspects = useMemo(
+    () => prospects.filter((p) => getPipelineStage(p).stage !== 'converti'),
+    [prospects]
+  );
+
+  /** Visibilité : Admin (ou pas de profil choisi) = tout ; sinon « Mes dossiers » par défaut */
+  const isFilteredView =
+    !!currentCollaborateur &&
+    currentCollaborateur.role !== 'Admin' &&
+    viewScope === 'mes_dossiers';
+
+  const scopedFlux = useMemo(() => {
+    if (!isFilteredView || !currentCollaborateur) return fluxProspects;
+    return fluxProspects.filter((p) =>
+      (p.collaborateur_ids || []).includes(currentCollaborateur.id)
+    );
+  }, [fluxProspects, isFilteredView, currentCollaborateur]);
+
+  const searchedFlux = useMemo(() => {
+    const q = prospectSearch.trim().toLowerCase();
+    if (q.length < 2) return scopedFlux;
+    return scopedFlux.filter((p) =>
+      `${p.prenom} ${p.nom}`.toLowerCase().includes(q) ||
+      (p.email || '').toLowerCase().includes(q) ||
+      (p.telephone || '').replace(/\s/g, '').includes(q.replace(/\s/g, ''))
+    );
+  }, [scopedFlux, prospectSearch]);
+
+  /** Reprise d'un dossier dont le titulaire est absent */
+  const handleReprendre = async (
+    e: React.MouseEvent,
+    p: Prospect,
+    titulaire: Collaborateur | null
+  ) => {
+    e.stopPropagation();
+    if (!currentCollaborateur) return;
+    const ok = window.confirm(
+      `Reprendre le dossier de ${p.prenom} ${p.nom}` +
+        (titulaire ? ` (titulaire actuel : ${titulaire.nom}, absent)` : '') +
+        ' ?\nLe dossier vous sera réassigné et le changement sera tracé.'
+    );
+    if (!ok) return;
+    setReprendreEnCours(p.id);
+    try {
+      const historique = String(p.airtable_dossier_fields?.['Historique_Assignation'] || '');
+      await reprendreDossier(p.id, currentCollaborateur, titulaire, historique);
+      dashboardCache = null;
+      mergeProspectsFromAirtable([
+        {
+          ...p,
+          collaborateur_ids: [currentCollaborateur.id],
+          airtable_dossier_fields: {
+            ...p.airtable_dossier_fields,
+            Collaborateurs_Cabinet_Client: [currentCollaborateur.id],
+          },
+        },
+      ]);
+    } catch (err) {
+      console.error('[Reprendre] Échec:', err);
+      window.alert('La reprise du dossier a échoué — réessayez ou vérifiez Airtable.');
+    } finally {
+      setReprendreEnCours(null);
+    }
+  };
+
+  const stageGroups = useMemo(() => groupByStage(searchedFlux), [searchedFlux]);
+
+  const visibleFlux = useMemo(
+    () => sortByPriority(stageGroups[stageTab] || []),
+    [stageGroups, stageTab]
+  );
+
+  const dashboardAlerts = useMemo(() => getAlerts(fluxProspects), [fluxProspects]);
+
+  /** Top 5 priorités tous sous-onglets confondus (liste condensée overview) */
+  const topPriorites = useMemo(
+    () => sortByPriority(fluxProspects.filter((p) => getPipelineStage(p).stage !== 'sans_suite')).slice(0, 5),
+    [fluxProspects]
+  );
 
   const stats = useMemo(() => [
     { label: "Prospects Actifs", val: prospects.length, icon: UserPlus, color: "#4F7CFF", trend: "+12%" },
@@ -305,6 +393,36 @@ const Dashboard: React.FC = () => {
 
   const renderOverview = () => (
     <>
+      {dashboardAlerts.length > 0 && (
+        <div className="mb-8 bg-red-50 border border-red-200 rounded-2xl overflow-hidden shadow-sm">
+          <div className="px-5 py-3 border-b border-red-100 flex items-center gap-2">
+            <AlertCircle size={18} className="text-red-500 shrink-0" />
+            <h3 className="text-sm font-black text-red-700 uppercase tracking-wider">
+              {dashboardAlerts.length} alerte{dashboardAlerts.length > 1 ? 's' : ''} — action requise
+            </h3>
+          </div>
+          <ul className="divide-y divide-red-100">
+            {dashboardAlerts.slice(0, 6).map((a, i) => (
+              <li key={i}>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/prospects/${a.prospectId}`)}
+                  className="w-full text-left px-5 py-2.5 text-xs font-bold text-red-800 hover:bg-red-100/60 transition-colors flex items-center justify-between gap-3"
+                >
+                  <span className="truncate">{a.message}</span>
+                  <ChevronRight size={14} className="shrink-0 text-red-400" />
+                </button>
+              </li>
+            ))}
+            {dashboardAlerts.length > 6 && (
+              <li className="px-5 py-2 text-[10px] font-black text-red-400 uppercase tracking-widest">
+                + {dashboardAlerts.length - 6} autre{dashboardAlerts.length - 6 > 1 ? 's' : ''}
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-10">
         {stats.map((stat, i) => (
           <div key={i} className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
@@ -400,7 +518,48 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {renderProspectsList()}
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="text-lg font-black text-slate-900 tracking-tight">À traiter aujourd'hui</h3>
+          <Link
+            to="/dashboard?tab=prospects"
+            className="text-[10px] font-black text-[#4F7CFF] uppercase tracking-widest hover:underline flex items-center gap-1"
+          >
+            Voir la file complète <ChevronRight size={12} />
+          </Link>
+        </div>
+        {topPriorites.length === 0 ? (
+          <p className="px-6 py-8 text-center text-sm font-bold text-slate-300">Rien d'urgent — la file est à jour.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {topPriorites.map((p) => {
+              const prio = getComputedPriority(p);
+              const stageInfo = getPipelineStage(p);
+              return (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/prospects/${p.id}`)}
+                    className="w-full text-left px-6 py-3 hover:bg-slate-50 transition-colors flex items-center gap-4"
+                  >
+                    <span className={`text-[9px] font-black px-2 py-1 rounded uppercase border whitespace-nowrap shrink-0 ${PRIORITY_BADGE[prio.level]}`}>
+                      {prio.level}
+                    </span>
+                    <span className="text-sm font-semibold text-slate-900 truncate shrink-0 min-w-[140px]">
+                      {p.prenom} {p.nom}
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap shrink-0">
+                      {stageInfo.label}
+                    </span>
+                    <span className="text-xs font-medium text-slate-500 truncate flex-1">{prio.reason}</span>
+                    <ChevronRight size={14} className="text-slate-300 shrink-0" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </>
   );
 
@@ -431,20 +590,72 @@ const Dashboard: React.FC = () => {
           <p className="text-xs font-bold text-blue-700">Synchronisation Airtable en cours…</p>
         </div>
       )}
-      <div className="p-6 md:p-8 border-b border-slate-200 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-        <h3 className="text-xl font-black text-slate-900 tracking-tight">Flux de Production</h3>
-        <div className="flex gap-2 md:gap-4 w-full md:w-auto">
-          <div className="relative flex-1 md:min-w-[250px]">
+      <div className="p-6 md:p-8 border-b border-slate-200 flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+          <div className="flex items-center gap-4">
+            <h3 className="text-xl font-black text-slate-900 tracking-tight">Flux de Production</h3>
+            {currentCollaborateur && currentCollaborateur.role !== 'Admin' && (
+              <div className="flex rounded-lg border border-slate-200 overflow-hidden text-[10px] font-black uppercase tracking-wider">
+                <button
+                  type="button"
+                  onClick={() => setViewScope('mes_dossiers')}
+                  className={`px-3 py-1.5 transition-colors ${viewScope === 'mes_dossiers' ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'}`}
+                >
+                  Mes dossiers
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewScope('tous')}
+                  className={`px-3 py-1.5 transition-colors ${viewScope === 'tous' ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 hover:bg-slate-50'}`}
+                >
+                  Tous
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="relative w-full md:w-auto md:min-w-[280px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Rechercher..." 
+            <input
+              type="text"
+              value={prospectSearch}
+              onChange={(e) => setProspectSearch(e.target.value)}
+              placeholder="Nom, email, téléphone…"
               className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 outline-none focus:border-[#4F7CFF] transition-all text-sm text-slate-700 font-medium"
             />
+            {prospectSearch && (
+              <button
+                type="button"
+                onClick={() => setProspectSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-slate-400 hover:text-slate-600"
+                aria-label="Effacer"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
-          <button className="p-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors shrink-0">
-            <Filter size={18} className="text-slate-500" />
-          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(['a_traiter', 'en_etude', 'signature', 'a_regulariser', 'sans_suite'] as PipelineStage[]).map((stage) => {
+            const count = (stageGroups[stage] || []).length;
+            const active = stageTab === stage;
+            return (
+              <button
+                key={stage}
+                type="button"
+                onClick={() => setStageTab(stage)}
+                className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider border transition-all ${
+                  active
+                    ? 'bg-slate-900 text-white border-slate-900 shadow'
+                    : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                {STAGE_LABELS[stage]}
+                <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] tabular-nums ${active ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -452,99 +663,147 @@ const Dashboard: React.FC = () => {
         <table className="w-full text-left">
           <thead>
             <tr className="text-[10px] text-slate-400 uppercase font-black tracking-widest border-b border-slate-200 bg-slate-50/50">
-              <th className="px-8 py-4">Prospect / Priorité</th>
-              <th className="px-8 py-4">Nature & Matching DDA</th>
-              <th className="px-8 py-4 text-center">Score GES</th>
-              <th className="px-8 py-4">Statut</th>
-              <th className="px-8 py-4 text-right">Actions</th>
+              <th className="px-6 py-4">Prospect / Canal</th>
+              <th className="px-6 py-4">Produit</th>
+              <th className="px-6 py-4">Sous-état</th>
+              <th className="px-6 py-4">Complétude</th>
+              <th className="px-6 py-4 text-center">DDA</th>
+              <th className="px-6 py-4">Ancienneté</th>
+              <th className="px-6 py-4">Priorité</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {prospects.map((p) => (
-              <tr 
-                key={p.id} 
-                className="group hover:bg-slate-50 transition-colors cursor-pointer"
-              >
-                <td className="px-8 py-5" onClick={() => navigate(`/prospects/${p.id}`)}>
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-semibold text-slate-400 shrink-0 text-xs relative">
-                       {(p.nom?.[0] || '?').toUpperCase()}{(p.prenom?.[0] || '?').toUpperCase()}
-                       {p.priority === 'Critique' && <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></div>}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-sm text-slate-900">{p.prenom} {p.nom}</p>
-                      <div className="flex gap-2 mt-1">
-                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase border ${p.priority ? PRIORITY_BADGE[p.priority] : 'bg-slate-50 text-slate-400'}`}>
-                          {p.priority || 'Normale'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-8 py-5" onClick={() => navigate(`/prospects/${p.id}`)}>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <Target size={14} className="text-[#4F7CFF]" />
-                      <span className="text-xs font-medium text-slate-700">{getProductLabel(p.type_contrat_demande)}</span>
-                    </div>
-                    {p.ia_analysis_done && p.ai_suggestions && (
-                      <div className="flex gap-1">
-                        {p.ai_suggestions.slice(0, 3).map((s, idx) => (
-                          <div key={idx} className="flex flex-col items-center bg-white border border-slate-100 rounded-lg p-1 min-w-[50px] shadow-sm">
-                            <span className="text-[8px] font-black text-slate-400">{s.compagnie}</span>
-                            <span className="text-[10px] font-black text-[#4F7CFF]">{s.score}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </td>
-                <td className="px-8 py-5" onClick={() => navigate(`/prospects/${p.id}`)}>
-                  <div className="flex flex-col items-center">
-                    <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden mb-1.5 shadow-inner">
-                      <div 
-                        className="h-full rounded-full transition-all duration-1000" 
-                        style={{ width: `${p.ges_score}%`, backgroundColor: getGesColor(p.ges_score) }}
-                      ></div>
-                    </div>
-                    <span className="text-[10px] font-black text-slate-400">{p.ges_score}%</span>
-                  </div>
-                </td>
-                <td className="px-8 py-5">
-                  <div className="flex flex-col gap-2">
-                    <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider whitespace-nowrap shadow-sm border ${STATUS_COLORS[p.statut]}`}>
-                      {STATUS_LABELS[p.statut]}
-                    </span>
-                    {p.fiche_conseil_generee && (
-                      <span className="flex items-center gap-1 text-[8px] font-black text-[#10B981] uppercase tracking-widest px-1">
-                        <CheckCircle size={10} /> Fiche Conseil Prête
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-8 py-5 text-right">
-                  <div className="flex justify-end gap-2">
-                    {!p.fiche_conseil_generee ? (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); generateFicheConseil(p.id); }}
-                        className="px-3 py-1.5 bg-[#4F7CFF] text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:bg-blue-600 transition-all flex items-center gap-2"
-                      >
-                        <Award size={14} /> FIC / DDC
-                      </button>
-                    ) : (
-                      <button className="p-2 text-slate-400 hover:text-slate-900 transition-colors">
-                        <MoreHorizontal size={20} />
-                      </button>
-                    )}
-                  </div>
+            {visibleFlux.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-6 py-10 text-center text-sm font-bold text-slate-300">
+                  Aucun dossier dans « {STAGE_LABELS[stageTab]} »{prospectSearch ? ' pour cette recherche' : ''}.
                 </td>
               </tr>
-            ))}
+            )}
+            {visibleFlux.map((p) => renderFluxRow(p))}
           </tbody>
         </table>
       </div>
     </div>
   );
+
+  /** Ligne de la file de production — clic = navigation vers la fiche prospect */
+  function renderFluxRow(p: Prospect) {
+    const stageInfo = getPipelineStage(p);
+    const prio = getComputedPriority(p);
+    const age = getAgeJours(p);
+    const inactif = getInactiviteJours(p);
+    const missingDocs = p.airtable_dossier_fields
+      ? collectMissingDocumentLabels(p.airtable_dossier_fields)
+      : [];
+    const apporteur = getApporteurName(p);
+    const titulaire = getTitulaire(p);
+    const titulaireAbsent = titulaire?.statutActivite === 'Absent';
+    const peutReprendre =
+      titulaireAbsent && !!currentCollaborateur && currentCollaborateur.id !== titulaire?.id;
+
+    return (
+      <tr
+        key={p.id}
+        onClick={() => navigate(`/prospects/${p.id}`)}
+        className="group hover:bg-slate-50 transition-colors cursor-pointer"
+      >
+        <td className="px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-semibold text-slate-400 shrink-0 text-xs relative">
+              {(p.prenom?.[0] || '?').toUpperCase()}{(p.nom?.[0] || '?').toUpperCase()}
+              {prio.level === 'Critique' && (
+                <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm text-slate-900 truncate">{p.prenom} {p.nom}</p>
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded uppercase bg-slate-100 text-slate-500 border border-slate-200">
+                  {getSourceLabel(p)}
+                </span>
+                {apporteur && (
+                  <span className="text-[9px] font-bold text-slate-400 truncate">{apporteur}</span>
+                )}
+                {titulaireAbsent && (
+                  <span
+                    className="text-[9px] font-black px-1.5 py-0.5 rounded uppercase bg-orange-50 text-orange-600 border border-orange-200"
+                    title={`Titulaire : ${titulaire?.nom} (absent)`}
+                  >
+                    Titulaire absent
+                  </span>
+                )}
+                {peutReprendre && (
+                  <button
+                    type="button"
+                    disabled={reprendreEnCours === p.id}
+                    onClick={(e) => handleReprendre(e, p, titulaire)}
+                    className="text-[9px] font-black px-2 py-0.5 rounded uppercase bg-[#4F7CFF] text-white hover:bg-blue-600 transition-colors disabled:opacity-50"
+                  >
+                    {reprendreEnCours === p.id ? 'Reprise…' : 'Reprendre'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </td>
+        <td className="px-6 py-4">
+          <div className="flex items-center gap-2">
+            <Target size={14} className="text-[#4F7CFF] shrink-0" />
+            <span className="text-xs font-medium text-slate-700">{getProductLabel(p.type_contrat_demande)}</span>
+          </div>
+        </td>
+        <td className="px-6 py-4">
+          <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap bg-blue-50 text-blue-600 border border-blue-100">
+            {stageInfo.label}
+          </span>
+        </td>
+        <td className="px-6 py-4">
+          <div className="flex flex-col gap-1 min-w-[110px]">
+            <div className="flex items-center gap-2">
+              <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{ width: `${p.ges_score}%`, backgroundColor: getGesColor(p.ges_score) }}
+                />
+              </div>
+              <span className="text-[10px] font-black text-slate-400 tabular-nums">{p.ges_score}%</span>
+            </div>
+            {missingDocs.length > 0 && (
+              <span className="text-[9px] font-bold text-orange-500 truncate" title={missingDocs.join(', ')}>
+                Manque : {missingDocs.slice(0, 2).join(', ')}{missingDocs.length > 2 ? '…' : ''}
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="px-6 py-4 text-center">
+          {isDdaDone(p) ? (
+            <span className="inline-flex items-center gap-1 text-[10px] font-black text-[#10B981]" title="Analyse DDA réalisée — Top 3 dans la fiche">
+              <CheckCircle size={13} /> Fait
+            </span>
+          ) : (
+            <span className="text-[10px] font-bold text-slate-300">—</span>
+          )}
+        </td>
+        <td className="px-6 py-4">
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-slate-700 tabular-nums">{age != null ? `${age} j` : '—'}</span>
+            {inactif != null && inactif > SEUIL_INACTIVITE_J && (
+              <span className="text-[9px] font-bold text-orange-500">inactif {inactif} j</span>
+            )}
+          </div>
+        </td>
+        <td className="px-6 py-4">
+          <span
+            className={`text-[9px] font-black px-2 py-1 rounded uppercase border whitespace-nowrap ${PRIORITY_BADGE[prio.level]}`}
+            title={prio.reason}
+          >
+            {prio.level}
+          </span>
+        </td>
+      </tr>
+    );
+  }
 
   /** Acronyme métier pour identification contrat (MRH, AUTO, MRP, PJ, GAV...) */
   function getContractAcronym(typeContrat: string): string {

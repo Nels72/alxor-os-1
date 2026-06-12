@@ -118,6 +118,13 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
   - **Intégration n8n** : voir `ops/presidio/N8N_INTEGRATION.md` — nœuds HTTP Request à ajouter dans les 3 workflows (Extraction RI, Extraction Devis, Extraction RI Cabinet)
   - **Déploiement serveur** : `install.sh` prêt pour `n8n2.reaktimo.com` — À faire (SSH requis)
 
+- **Dashboard refondu — file de production par étapes (2026-06-12)** :
+  - `lib/pipeline.ts` : étapes dérivées de `Statut_Dossier` + `Statut_Signature` + GES (À traiter / En étude / Signature / À régulariser / Sans suite ; converti GES 100 → sort vers Portefeuille Client) ; priorité calculée (SLA premier contact **24h**, relance devis **24h**, relance contrat **J+1**, contrat à émettre **48h**) ; alertes critiques (bandeau overview)
+  - Distinction « signature active » vs « **attente retour client** » (projet à échéance) : `Date_Rappel_Client` (nouveau champ Dossiers) prioritaire, fallback `Devis_Date_Effet` > 15 j → relance à J-7 avant date d'effet
+  - Sélecteur de profil collaborateur (V1, Layout) sur table `Collaborateurs_Cabinet_Client` ; visibilité : Admin = tout, sinon « Mes dossiers » par défaut + bascule « Tous » ; bouton **Reprendre** sur dossier à titulaire `Absent` → réassignation Airtable + trace dans `Historique_Assignation` (nouveau champ)
+  - Top 3 DDA : indicateur « Fait » en liste (détail dans la fiche prospect) ; mocks supprimés (bouton FIC/DDC, immatriculations aléatoires) ; recherche réelle ; docs manquants nominatifs en liste
+  - Logique testée sur 17 cas synthétiques (esbuild + node) — toutes les branches OK
+
 **Prochaines étapes connues :**
 0. ~~Corriger le credential n8n « Header Auth account »~~ — **FAIT 2026-06-12 via API** :
    - `PATCH /rest/credentials/vsMFMN5O6M4G7eMB` avec cookie de session (`POST /rest/login`) — l'API REST interne accepte bien le PATCH credentials avec un cookie navigateur

@@ -150,6 +150,12 @@ export interface Prospect {
   >;
   /** Champs bruts du record Dossiers (courtier, statuts, etc.) */
   airtable_dossier_fields?: Record<string, unknown>;
+  /** Canal d'origine du lead (Cabinet / Alex Web Public / Alex Apporteur) */
+  source?: string;
+  /** Dernière modification du dossier (lastModifiedTime Airtable, ISO) */
+  derniere_activite?: string;
+  /** IDs des collaborateurs assignés (records Collaborateurs_Cabinet_Client) */
+  collaborateur_ids?: string[];
   /** Données tarifantes structurées par famille produit (Auto/Moto, ...) */
   product_data?: ProspectProductData;
 }

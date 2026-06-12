@@ -1,24 +1,53 @@
 // Build Force: 23-03-2026
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Users, 
-  FileText, 
-  Settings, 
-  LogOut, 
+import {
+  LayoutDashboard,
+  Users,
+  FileText,
+  Settings,
+  LogOut,
   UserPlus,
   ChevronRight,
-  ShieldCheck
+  ChevronDown,
+  ShieldCheck,
+  Check
 } from 'lucide-react';
 import { useStore } from '../store';
 import Logo from './Logo';
+import {
+  listCollaborateurs,
+  Collaborateur,
+} from '../services/collaborateursAirtable';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const logout = useStore(state => state.logout);
   const user = useStore(state => state.user);
+  const currentCollaborateur = useStore(state => state.currentCollaborateur);
+  const setCurrentCollaborateur = useStore(state => state.setCurrentCollaborateur);
+
+  const [collabs, setCollabs] = useState<Collaborateur[]>([]);
+  const [selectorOpen, setSelectorOpen] = useState(false);
+  const selectorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    listCollaborateurs()
+      .then(setCollabs)
+      .catch((err) => console.error('[Collaborateurs] Échec chargement:', err));
+  }, []);
+
+  useEffect(() => {
+    if (!selectorOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (selectorRef.current && !selectorRef.current.contains(e.target as Node)) {
+        setSelectorOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [selectorOpen]);
 
   const menuItems = [
     { name: 'Tableau de bord', icon: LayoutDashboard, path: '/dashboard', match: '/dashboard?tab=overview' },
@@ -30,6 +59,15 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   ];
 
   const currentPath = location.pathname + location.search;
+
+  const displayName = currentCollaborateur?.nom || `${user?.first_name || ''} ${user?.last_name || ''}`.trim();
+  const initials = displayName
+    .split(/\s+/)
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || '—';
 
   return (
     <div className="flex h-screen bg-[#f8fafc]">
@@ -66,16 +104,64 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </nav>
 
         <div className="p-6 border-t border-slate-100">
-          <div className="flex items-center gap-3 px-1 md:px-2 py-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-sm font-black text-slate-700 shrink-0">
-              {user?.first_name?.[0]}{user?.last_name?.[0]}
-            </div>
-            <div className="hidden md:block overflow-hidden">
-              <p className="text-sm font-bold text-slate-900 truncate">{user?.first_name} {user?.last_name}</p>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Collaborateur OS</p>
-            </div>
+          {/* Sélecteur de profil collaborateur (V1) */}
+          <div ref={selectorRef} className="relative mb-4">
+            <button
+              type="button"
+              onClick={() => setSelectorOpen((o) => !o)}
+              className="w-full flex items-center gap-3 px-1 md:px-2 py-3 rounded-xl hover:bg-slate-50 transition-colors text-left"
+              title="Changer de profil"
+            >
+              <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-sm font-black text-slate-700 shrink-0">
+                {initials}
+              </div>
+              <div className="hidden md:block overflow-hidden flex-1">
+                <p className="text-sm font-bold text-slate-900 truncate">{displayName || 'Choisir un profil'}</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  {currentCollaborateur ? currentCollaborateur.role : 'Collaborateur OS'}
+                </p>
+              </div>
+              <ChevronDown size={14} className={`hidden md:block text-slate-400 shrink-0 transition-transform ${selectorOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {selectorOpen && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-50">
+                <p className="px-4 pt-3 pb-1 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  Je travaille en tant que…
+                </p>
+                <ul className="max-h-64 overflow-y-auto pb-2">
+                  {collabs.length === 0 && (
+                    <li className="px-4 py-3 text-xs font-bold text-slate-300">Chargement…</li>
+                  )}
+                  {collabs.map((c) => {
+                    const selected = currentCollaborateur?.id === c.id;
+                    return (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          onClick={() => { setCurrentCollaborateur(c); setSelectorOpen(false); }}
+                          className={`w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-slate-50 transition-colors ${selected ? 'bg-blue-50' : ''}`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-slate-900 truncate">{c.nom}</p>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                              {c.role}
+                              {c.statutActivite === 'Absent' && (
+                                <span className="ml-1.5 text-orange-500">· Absent</span>
+                              )}
+                            </p>
+                          </div>
+                          {selected && <Check size={14} className="text-[#4F7CFF] shrink-0" />}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </div>
-          <button 
+
+          <button
             onClick={() => { logout(); navigate('/'); }}
             className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all group"
           >

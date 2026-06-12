@@ -345,6 +345,12 @@ export async function mapDossierToProspect(
     isAuto &&
     phase1Keys.every((k) => (attachments[k]?.length ?? 0) > 0);
 
+  const collabIds = Array.isArray(f['Collaborateurs_Cabinet_Client'])
+    ? (f['Collaborateurs_Cabinet_Client'] as unknown[]).filter(
+        (v): v is string => typeof v === 'string'
+      )
+    : undefined;
+
   return {
     id: dossier.id,
     nom: nom.trim() || '—',
@@ -355,9 +361,15 @@ export async function mapDossierToProspect(
     statut: mapStatutToProspect(statutRaw),
     ges_score: hasAllPhase1Auto ? Math.max(ges, 60) : ges,
     created_at:
-      typeof f['Date de création'] === 'string'
-        ? f['Date de création']
-        : dossier.createdTime?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+      typeof f['Date_Création'] === 'string'
+        ? f['Date_Création']
+        : typeof f['Date de création'] === 'string'
+          ? f['Date de création']
+          : dossier.createdTime?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+    source: typeof f['Source'] === 'string' ? f['Source'] : undefined,
+    derniere_activite:
+      typeof f['Dernière_Activité'] === 'string' ? f['Dernière_Activité'] : undefined,
+    collaborateur_ids: collabIds?.length ? collabIds : undefined,
     airtable_attachments:
       Object.keys(attachments).length > 0 ? attachments : undefined,
     airtable_dossier_fields: f,
