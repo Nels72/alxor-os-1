@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: presidio-alxor
+    runtime: python
+    rootDir: ops/presidio
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt && python -m spacy download fr_core_news_md
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 120 presidio_api:app
+    plan: free
+    envVars:
+      - key: PRESIDIO_LOG_LEVEL
+        value: WARNING
+      - key: PRESIDIO_SCORE_THRESHOLD
+        value: "0.4"
+    healthCheckPath: /health
+    autoDeploy: true
