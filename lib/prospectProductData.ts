@@ -37,6 +37,8 @@ export interface AutoProductData {
   }>;
 
   // ── Saisie courtier ──────────────────────────────────────────────────────
+  /** Véhicule à assurer — distinct du véhicule du RI (qui peut être un ancien véhicule) */
+  immatriculation_a_assurer?: string | null;
   formule_souhaitee?: 'RC' | 'Tiers Étendu' | 'Tous Risques';
   conducteur_secondaire?: boolean;
   date_naissance_conducteur_secondaire?: string; // YYYY-MM-DD

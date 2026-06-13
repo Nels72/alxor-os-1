@@ -551,11 +551,20 @@ const ProspectDetail: React.FC = () => {
                       )}
 
                       {/* Bloc véhicule (lecture seule) */}
-                      {(pd?.immatriculation || pd?.vehicule_marque) && (
+                      {(pd?.immatriculation_a_assurer || pd?.immatriculation || pd?.vehicule_marque) && (
                         <div className="mb-4 p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5"><Lock size={10} /> Véhicule (depuis RI)</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5"><Lock size={10} /> Véhicule à assurer</p>
                           <div className="grid grid-cols-2 gap-2 text-xs">
-                            {pd?.immatriculation && <div><span className="text-slate-400 font-black uppercase text-[9px]">Immat.</span><p className="font-bold text-slate-900">{pd.immatriculation}</p></div>}
+                            {/* Immatriculation : saisie courtier en priorité, RI en fallback */}
+                            <div>
+                              <span className="text-slate-400 font-black uppercase text-[9px]">Immat.</span>
+                              <p className="font-bold text-slate-900 font-mono tracking-wider">
+                                {pd?.immatriculation_a_assurer || pd?.immatriculation || '—'}
+                              </p>
+                              {pd?.immatriculation_a_assurer && pd?.immatriculation && pd.immatriculation_a_assurer !== pd.immatriculation && (
+                                <p className="text-[8px] text-slate-400 mt-0.5">RI : {pd.immatriculation}</p>
+                              )}
+                            </div>
                             {pd?.vehicule_marque && <div><span className="text-slate-400 font-black uppercase text-[9px]">Marque</span><p className="font-bold text-slate-900">{pd.vehicule_marque}</p></div>}
                             {pd?.vehicule_modele && <div><span className="text-slate-400 font-black uppercase text-[9px]">Modèle</span><p className="font-bold text-slate-900">{pd.vehicule_modele}</p></div>}
                             {pd?.vehicule_usage && <div><span className="text-slate-400 font-black uppercase text-[9px]">Usage</span><p className="font-bold text-slate-900">{pd.vehicule_usage}</p></div>}
@@ -607,6 +616,25 @@ const ProspectDetail: React.FC = () => {
                       {/* Champs éditables courtier */}
                       <div className="p-4 rounded-2xl border border-slate-200 space-y-4">
                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Saisie courtier</p>
+                        {/* Immatriculation du véhicule à assurer */}
+                        <div>
+                          <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest block mb-2">
+                            Immatriculation du véhicule à assurer
+                          </label>
+                          <input
+                            type="text"
+                            value={pd?.immatriculation_a_assurer || ''}
+                            onChange={e => updateProspect(id!, { product_data: { ...(pd || { type: 'vehicule' as const }), immatriculation_a_assurer: e.target.value.toUpperCase() } })}
+                            placeholder="Ex : AB-123-CD"
+                            maxLength={9}
+                            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 w-full font-mono tracking-widest focus:border-[#4F7CFF] outline-none transition-colors"
+                          />
+                          {pd?.immatriculation && pd.immatriculation !== pd.immatriculation_a_assurer && (
+                            <p className="text-[9px] font-bold text-slate-400 mt-1">
+                              RI : {pd.immatriculation} — si identique, saisir la même plaque
+                            </p>
+                          )}
+                        </div>
                         {/* Formule souhaitée */}
                         <div>
                           <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">Formule souhaitée</p>
