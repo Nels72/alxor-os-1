@@ -1,6 +1,6 @@
 # CLAUDE.md — Alxor OS (Easy Courtage Assurance)
 
-> Contexte projet chargé à chaque session Claude Code. Mise à jour : 2026-06-11.
+> Contexte projet chargé à chaque session Claude Code. Mise à jour : 2026-06-13.
 > Aucun secret ici — toutes les clés/tokens sont dans `.env` (gitignoré) ou `.mcp.json` (gitignoré). Voir `docs/SETUP.md`.
 > **Ce dépôt (`Nels72/alxor-os-1`) est désormais l'unique dépôt vivant du projet.**
 
@@ -125,7 +125,15 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
   - Top 3 DDA : indicateur « Fait » en liste (détail dans la fiche prospect) ; mocks supprimés (bouton FIC/DDC, immatriculations aléatoires) ; recherche réelle ; docs manquants nominatifs en liste
   - Logique testée sur 17 cas synthétiques (esbuild + node) — toutes les branches OK
 
-**Prochaines étapes connues :**
+- **Fiche prospect — Saisie courtier (2026-06-13)** :
+  - Nouveau champ `immatriculation_a_assurer` (type `AutoProductData`) — véhicule **à assurer**, distinct de l'immatriculation extraite du RI (véhicule précédent)
+  - Saisie courtier : champ monospace/uppercase dans la section « Saisie courtier » de `ProspectDetail.tsx`, rappel discret de l'immat RI si différente
+  - Fiche tarification : `immatriculation_a_assurer` en priorité, fallback RI ; titre bloc → « Véhicule à assurer »
+
+- **Fixes Dashboard (2026-06-13)** :
+  - Colonne Produit toujours vide sur les vrais dossiers : `getInsuranceTypeLabel` ne cherchait pas `'Type_Contrat'` (nom réel du champ Airtable) — corrigé (`services/dossiersAirtable.ts`)
+
+**Chantiers en cours / prochaines étapes :**
 0. ~~Corriger le credential n8n « Header Auth account »~~ — **FAIT 2026-06-12 via API** :
    - `PATCH /rest/credentials/vsMFMN5O6M4G7eMB` avec cookie de session (`POST /rest/login`) — l'API REST interne accepte bien le PATCH credentials avec un cookie navigateur
    - Name : `Airtable_HTTP` → `Authorization` (vérifié en relecture) ; Value : `Bearer <PAT n8n>` (PAT testé 200 sur l'URL exacte du nœud `Query Docs Provisoires`)
