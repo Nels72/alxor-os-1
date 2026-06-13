@@ -118,6 +118,7 @@ export function buildWorkflowAttachmentMap(
 
 export function getInsuranceTypeLabel(fields: Record<string, unknown>): string {
   for (const k of [
+    'Type_Contrat',
     'Type de contrat',
     'Type d\'assurance',
     'Nature de la demande',
