@@ -1,6 +1,6 @@
 # CLAUDE.md — Alxor OS (Easy Courtage Assurance)
 
-> Contexte projet chargé à chaque session Claude Code. Mise à jour : 2026-06-13.
+> Contexte projet chargé à chaque session Claude Code. Mise à jour : 2026-06-14.
 > Aucun secret ici — toutes les clés/tokens sont dans `.env` (gitignoré) ou `.mcp.json` (gitignoré). Voir `docs/SETUP.md`.
 > **Ce dépôt (`Nels72/alxor-os-1`) est désormais l'unique dépôt vivant du projet.**
 
@@ -153,6 +153,15 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
   - Module 47 "Créer un Nouveau Dossier" : ajout champ `Apporteur_Dossier=[{{29.id}}]` (record ID Airtable)
   - Vérifié : `Dossiers_Apportes` côté Apporteur auto-peuplé via liaison inverse ✅
   - ⚠️ **Workflows n8n non déclenchés** sur les dossiers Alex Apporteur créés lors du test — à investiguer (Distribution Lead, Extraction RI non partis) — priorité prochaine session
+
+- **GED Documents + CTA Matching + permis recto/verso (2026-06-14 soir)** :
+  - `services/airtable.ts` — `getDocumentsByDossier` : filtre corrigé `{Dossier}="DOS_XXXXXX"` (le champ lié retourne le champ primaire, pas le recId) → documents GED remontent correctement dans l'onglet Documents
+  - `Pages/ProspectDetail.tsx` — preview docs : iframe Dropbox remplacée par modal info + bouton "Ouvrir" (X-Frame-Options bloque l'embed) ; bouton "Rafraîchir" ajouté sur l'onglet Documents
+  - `Pages/ProspectDetail.tsx` — CTA Matching : `bloquantsMissing` exclut le RI si `RI_Traité = true` dans Airtable ; le bouton s'active même sans upload manuel du RI
+  - `lib/preDevisDocuments.ts` — `DocumentConfig` : nouveau champ optionnel `max_files?: number` ; `permis_conduire` passe à `max_files: 2`
+  - `Pages/ProspectDetail.tsx` — bouton "Verso" compact affiché quand `max_files > 1` et doc déjà reçu, pour joindre le recto séparé
+  - `ops/blueprints/` — blueprint Make module 57 `http:MakeRequest` (remplace `http:ActionSendData` inexistant), `stopOnHttpError: false`
+  - commit `8386abe` pushé ✅
 
 **Chantiers en cours / prochaines étapes :**
 0. ~~Corriger le credential n8n « Header Auth account »~~ — **FAIT 2026-06-12 via API** :
