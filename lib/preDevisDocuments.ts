@@ -13,6 +13,8 @@ export interface DocumentConfig {
   peut_etre_provisoire?: boolean;
   /** Délai par défaut (jours) pour l'échéance d'un document provisoire. Défaut 90. */
   delai_provisoire_jours?: number;
+  /** Nombre max de fichiers acceptés (ex: permis recto + verso). Défaut 1. */
+  max_files?: number;
 }
 
 // ============================
@@ -28,6 +30,7 @@ const AUTO_PHASE_1: DocumentConfig[] = [
     bloquant: true,
     description: 'Recto-verso',
     peut_etre_provisoire: true,
+    max_files: 2,
   },
   {
     type: 'carte_grise',

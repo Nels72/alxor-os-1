@@ -133,6 +133,27 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
 - **Fixes Dashboard (2026-06-13)** :
   - Colonne Produit toujours vide sur les vrais dossiers : `getInsuranceTypeLabel` ne cherchait pas `'Type_Contrat'` (nom réel du champ Airtable) — corrigé (`services/dossiersAirtable.ts`)
 
+- **Dashboard — auth réelle + onglets Docs/Admin + suivi Apporteurs (2026-06-14)** :
+  - `LoginAdmin.tsx` : auth via `Collaborateurs_Cabinet_Client` (Email_Pro + MDP_Prov + Statut=Actif), suppression credentials hardcodés
+  - `store.ts` : `login(collab?)` hydrate `currentCollaborateur` + persiste en localStorage
+  - Dashboard overview : suppression données fictives (14 500 €, +12%, CHART_DATA, widget 65%/140h, « Jean-Marc Dupont »)
+  - Onglet **Documents Cabinet** : CRUD depuis table `Documents_Cabinet` (graceful 404/422 si absente) — `services/documentsCabinetAirtable.ts`
+  - Onglet **Administration** : sous-onglets Collaborateurs (inline edit, création, rôle Admin) + Apporteurs (carte expandable, dossiers liés lazy-load, totaux commissions)
+  - `services/apporteursAirtable.ts` : `fetchDossiersApporteur()`, `parseRollup()` (gère `number | string[]`), champ `Dossiers_Apportes` (sans accent)
+
+- **Schéma Airtable Apporteurs ↔ Dossiers — nettoyé (2026-06-14)** :
+  - Paire unique : `Apporteur_Dossier` (`fldvWVTKM6ajxmK8h`) dans Dossiers ↔ `Dossiers_Apportes` (`fldVWNItsuSI1nuAN`) dans Apporteurs
+  - Rollups valides : `Total_Reverse_Apporteur` + `Total_Global_En_Attente` sur `Dossiers_Apportes`
+  - Lookup `Taux_Apporteur` reconfiguré → `Commission_Defaut` via `Apporteur_Dossier`
+  - Champs redondants/orphelins supprimés (ancienne paire, texte `Dossiers_old_texte`)
+  - ⚠️ L'API Airtable ne supporte pas le PATCH de `recordLinkFieldId` sur rollup/lookup existants — toujours passer par l'UI
+
+- **Make "Alex Apporteur" — liaison Apporteur corrigée (2026-06-14)** :
+  - Module 29 "Cherche Apporteur" : ajout `filterByFormula={ID_Apporteur}="{{51.id_apporteur}}"` (sans ce filtre il retournait le 1er apporteur de la table)
+  - Module 47 "Créer un Nouveau Dossier" : ajout champ `Apporteur_Dossier=[{{29.id}}]` (record ID Airtable)
+  - Vérifié : `Dossiers_Apportes` côté Apporteur auto-peuplé via liaison inverse ✅
+  - ⚠️ **Workflows n8n non déclenchés** sur les dossiers Alex Apporteur créés lors du test — à investiguer (Distribution Lead, Extraction RI non partis) — priorité prochaine session
+
 **Chantiers en cours / prochaines étapes :**
 0. ~~Corriger le credential n8n « Header Auth account »~~ — **FAIT 2026-06-12 via API** :
    - `PATCH /rest/credentials/vsMFMN5O6M4G7eMB` avec cookie de session (`POST /rest/login`) — l'API REST interne accepte bien le PATCH credentials avec un cookie navigateur

@@ -9,13 +9,13 @@ import {
   ChevronRight, ShieldCheck, DollarSign, X, MapPin, Mail, Phone,
   History, Info, ExternalLink, PenTool, Check, Award, Loader2, Handshake,
   Target, AlertTriangle, Eye, Download, Send, Search, Sparkles, TrendingUp,
-  CreditCard
+  CreditCard, RefreshCw, Plus
 } from 'lucide-react';
 import { useStore } from '../store';
 import { WORKFLOW_DOCUMENTS } from '../lib/preDevisDocuments';
 import { getProductLabel } from '../lib/productCatalog';
 import { AISuggestion, PriorityLevel } from '../types';
-import { getDossierById, getContactById, mapDossierToProspect, mapDocTypeToAirtable, updateDossierMessageInitial, type AirtableDocument } from '../services/airtable';
+import { getDossierById, getContactById, mapDossierToProspect, mapDocTypeToAirtable, updateDossierMessageInitial, updateContact, type AirtableDocument } from '../services/airtable';
 import { saveDDAChoixFinal } from '../services/ddaService';
 import FicheTarification from '../components/FicheTarification';
 import FicFormModal from '../components/FicFormModal';
@@ -101,6 +101,16 @@ const ProspectDetail: React.FC = () => {
   }, [id]);
 
   const [activeTab, setActiveTab] = useState<'docs' | 'info'>('info');
+  const [isRefreshingDocs, setIsRefreshingDocs] = useState(false);
+  const tabInitialised = useRef(false);
+  useEffect(() => {
+    if (!prospect || tabInitialised.current) return;
+    tabInitialised.current = true;
+    if (prospect.source === 'Alex Apporteur' || prospect.source === 'Alex Web Public') {
+      setActiveTab('docs');
+    }
+  }, [prospect?.id]);
+
   const matchingRef = useRef<HTMLDivElement>(null);
   const goToMatching = () => {
     setActiveTab('docs');
@@ -182,13 +192,38 @@ const ProspectDetail: React.FC = () => {
     return WORKFLOW_DOCUMENTS[productKey] || WORKFLOW_DOCUMENTS[productKey.toLowerCase()] || WORKFLOW_DOCUMENTS['auto'] || [];
   }, [productKey]);
 
+  // Préfixes de fichiers Make connus (fallback quand Type_Document absent = Renommage pas encore passé)
+  const DOC_FILENAME_PREFIXES: Record<string, string[]> = {
+    carte_grise:         ['cgb_', 'cg_', 'carte_grise', 'cartegrise'],
+    permis_conduire:     ['pc_', 'permis_', 'permis de'],
+    releve_information:  ['ri_', 'relevé_', 'releve_'],
+    carte_identite:      ['ci_', 'cni_', 'identite_', 'piece_id'],
+    justificatif_domicile: ['jd_', 'domicile_', 'justif_dom'],
+  };
+
   const findAirtableDoc = (workflowType: string): AirtableDocument | undefined => {
     const airtableType = mapDocTypeToAirtable(workflowType);
-    // Types spécifiques (Permis, RI, CG, Contrat…) → match par Type_Document
-    if (airtableType !== 'Autre' && airtableType !== 'Questionnaire') {
-      return airtableDocs.find(d => d.fields.Type_Document === airtableType);
+    // Types spécifiques → match par Type_Document en priorité
+    // carte_grise accepte les deux variantes (CGB provisoire ou CG définitive)
+    const acceptedTypes: string[] = airtableType !== 'Autre' && airtableType !== 'Questionnaire'
+      ? workflowType === 'carte_grise'
+        ? ['Carte Grise Barrée', 'Carte Grise Définitive']
+        : [airtableType]
+      : [];
+    if (acceptedTypes.length > 0) {
+      const byType = airtableDocs.find(d => acceptedTypes.includes(d.fields.Type_Document || ''));
+      if (byType) return byType;
     }
-    // Types génériques ('Autre') → match par le préfixe label dans Nom_Fichier
+    // Fallback : match par préfixe Nom_Fichier (Make n'a pas encore renommé / posé Type_Document)
+    const prefixes = DOC_FILENAME_PREFIXES[workflowType];
+    if (prefixes) {
+      const byName = airtableDocs.find(d => {
+        const fn = d.fields.Nom_Fichier?.toLowerCase() || '';
+        return prefixes.some(p => fn.startsWith(p));
+      });
+      if (byName) return byName;
+    }
+    // Types génériques ('Autre') → match par le label du doc config
     const docConfig = configDocs.find(d => d.type === workflowType);
     if (docConfig) {
       const labelLower = docConfig.label.toLowerCase();
@@ -208,9 +243,10 @@ const ProspectDetail: React.FC = () => {
 
   // Docs bloquants Phase 1 : TOUS doivent être fournis pour avancer
   const bloquantsPhase1 = phase1Docs.filter(d => d.bloquant && !(sansAntecedents && d.type === 'releve_information'));
-  const bloquantsMissing = bloquantsPhase1.filter(
-    d => !docsUploaded.includes(d.type) && !(prospect?.airtable_attachments?.[d.type]?.length) && !findAirtableDoc(d.type)
-  );
+  const bloquantsMissing = bloquantsPhase1.filter(d => {
+    if (d.type === 'releve_information' && prospect?.airtable_dossier_fields?.RI_Traité) return false;
+    return !docsUploaded.includes(d.type) && !(prospect?.airtable_attachments?.[d.type]?.length) && !findAirtableDoc(d.type);
+  });
   const allBloquantsFournis = bloquantsMissing.length === 0;
 
   // Phase 1 complète : soit tous les bloquants fournis (si bloquants existent),
@@ -441,12 +477,32 @@ const ProspectDetail: React.FC = () => {
 
         {/* NAVIGATION & ACTIONS RAPIDES */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <button onClick={() => navigate('/dashboard?tab=prospects')} className="flex items-center gap-2 text-slate-400 hover:text-slate-900 font-bold text-xs uppercase tracking-widest transition-colors w-fit">
-            <ArrowLeft size={16} /> Flux Opérationnel
-          </button>
-          <div className="flex bg-white p-1 rounded-xl border border-slate-200 w-full md:w-auto overflow-x-auto no-scrollbar">
-            <button onClick={() => setActiveTab('info')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'info' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-600'}`}>Infos</button>
-            <button onClick={() => setActiveTab('docs')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'docs' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-600'}`}>Documents</button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={() => navigate('/dashboard?tab=prospects')} className="flex items-center gap-2 text-slate-400 hover:text-slate-900 font-bold text-xs uppercase tracking-widest transition-colors">
+              <ArrowLeft size={16} /> Flux Opérationnel
+            </button>
+            {/* Réf dossier */}
+            {((prospect.airtable_dossier_fields?.ID_Dossier as string) || prospect.id?.startsWith('rec')) && (
+              <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 font-mono text-[10px] font-bold border border-slate-200 tracking-wider select-all">
+                {(prospect.airtable_dossier_fields?.ID_Dossier as string) || prospect.id}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex bg-white p-1 rounded-xl border border-slate-200 w-full md:w-auto overflow-x-auto no-scrollbar">
+              <button onClick={() => setActiveTab('info')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'info' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-600'}`}>Infos</button>
+              <button onClick={() => setActiveTab('docs')} className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'docs' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-600'}`}>Documents</button>
+            </div>
+            {activeTab === 'docs' && id?.startsWith('rec') && (
+              <button
+                onClick={async () => { setIsRefreshingDocs(true); await loadDocumentsForDossier(id); setIsRefreshingDocs(false); }}
+                disabled={isRefreshingDocs}
+                className="p-2 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-slate-700 hover:border-slate-300 transition-all"
+                title="Rafraîchir les documents"
+              >
+                <RefreshCw size={14} className={isRefreshingDocs ? 'animate-spin' : ''} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -475,7 +531,31 @@ const ProspectDetail: React.FC = () => {
                         <div className="w-12 h-12 rounded-full bg-blue-100 text-[#4F7CFF] flex items-center justify-center font-black text-sm shrink-0">
                           {prospect.prenom?.[0] || '?'}{prospect.nom?.[0] || '?'}
                         </div>
-                        <p className="text-lg font-black text-slate-900 truncate">{prospect.prenom} {prospect.nom}</p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            {(['M.', 'Mme'] as const).map(civ => (
+                              <button
+                                key={civ}
+                                onClick={async () => {
+                                  if (!id) return;
+                                  updateProspect(id, { civilite: civ });
+                                  const contactId = (prospect.airtable_dossier_fields?.Contact as string[] | undefined)?.[0];
+                                  if (contactId) {
+                                    await updateContact(contactId, { Civilite: civ }).catch(console.error);
+                                  }
+                                }}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${
+                                  prospect.civilite === civ
+                                    ? 'bg-[#4F7CFF] text-white border-[#4F7CFF]'
+                                    : 'bg-white text-slate-400 border-slate-200 hover:border-[#4F7CFF]/50'
+                                }`}
+                              >
+                                {civ}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-lg font-black text-slate-900 truncate">{prospect.prenom} {prospect.nom}</p>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -593,8 +673,11 @@ const ProspectDetail: React.FC = () => {
                               <span className="text-slate-400 font-black uppercase text-[9px]">Bonus/Malus</span>
                               <p className={`font-bold ${(pd.bonus_malus || 0) > 1 ? 'text-orange-600' : 'text-green-600'}`}>{pd.bonus_malus?.toFixed(2)}</p>
                             </div>
-                            {pd.bm_nb_annees_050 !== null && pd.bm_nb_annees_050 !== undefined && (
-                              <div><span className="text-slate-400 font-black uppercase text-[9px]">Coeff. nb mois</span><p className="font-bold text-slate-900">{pd.bm_nb_annees_050} ans</p></div>
+                            {pd.nb_mois != null && (
+                              <div><span className="text-slate-400 font-black uppercase text-[9px]">Mois cumulés</span><p className="font-bold text-slate-900">{pd.nb_mois} mois</p></div>
+                            )}
+                            {pd.bm_nb_annees_050 != null && (
+                              <div><span className="text-slate-400 font-black uppercase text-[9px]">Coeff. ≤ 0.50</span><p className="font-bold text-slate-900">{pd.bm_nb_annees_050} ans</p></div>
                             )}
                             {pd.nb_sinistres_36m !== undefined && (
                               <div>
@@ -603,7 +686,7 @@ const ProspectDetail: React.FC = () => {
                               </div>
                             )}
                             {pd.type_sinistres && <div><span className="text-slate-400 font-black uppercase text-[9px]">Type sinistres</span><p className="font-bold text-slate-900">{pd.type_sinistres}</p></div>}
-                            {pd.compagnie_precedente && <div><span className="text-slate-400 font-black uppercase text-[9px]">Cagnie précédente</span><p className="font-bold text-slate-900">{pd.compagnie_precedente}</p></div>}
+                            {pd.compagnie_precedente && <div><span className="text-slate-400 font-black uppercase text-[9px]">Compagnie préc.</span><p className="font-bold text-slate-900">{pd.compagnie_precedente}</p></div>}
                             <div>
                               <span className="text-slate-400 font-black uppercase text-[9px]">Résilié</span>
                               <p className={`font-bold ${pd.resilie ? 'text-red-600' : 'text-green-600'}`}>{pd.resilie ? 'OUI' : 'NON'}</p>
@@ -616,25 +699,22 @@ const ProspectDetail: React.FC = () => {
                       {/* Champs éditables courtier */}
                       <div className="p-4 rounded-2xl border border-slate-200 space-y-4">
                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Saisie courtier</p>
-                        {/* Immatriculation du véhicule à assurer */}
-                        <div>
-                          <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest block mb-2">
-                            Immatriculation du véhicule à assurer
-                          </label>
-                          <input
-                            type="text"
-                            value={pd?.immatriculation_a_assurer || ''}
-                            onChange={e => updateProspect(id!, { product_data: { ...(pd || { type: 'vehicule' as const }), immatriculation_a_assurer: e.target.value.toUpperCase() } })}
-                            placeholder="Ex : AB-123-CD"
-                            maxLength={9}
-                            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 w-full font-mono tracking-widest focus:border-[#4F7CFF] outline-none transition-colors"
-                          />
-                          {pd?.immatriculation && pd.immatriculation !== pd.immatriculation_a_assurer && (
-                            <p className="text-[9px] font-bold text-slate-400 mt-1">
-                              RI : {pd.immatriculation} — si identique, saisir la même plaque
-                            </p>
-                          )}
-                        </div>
+                        {/* Immatriculation — masquée si RI déjà extrait (immatriculation disponible dans le bloc Véhicule) */}
+                        {!hasRIData && (
+                          <div>
+                            <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest block mb-2">
+                              Immatriculation du véhicule à assurer
+                            </label>
+                            <input
+                              type="text"
+                              value={pd?.immatriculation_a_assurer || ''}
+                              onChange={e => updateProspect(id!, { product_data: { ...(pd || { type: 'vehicule' as const }), immatriculation_a_assurer: e.target.value.toUpperCase() } })}
+                              placeholder="Ex : AB-123-CD"
+                              maxLength={9}
+                              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 w-full font-mono tracking-widest focus:border-[#4F7CFF] outline-none transition-colors"
+                            />
+                          </div>
+                        )}
                         {/* Formule souhaitée */}
                         <div>
                           <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-2">Formule souhaitée</p>
@@ -707,22 +787,24 @@ const ProspectDetail: React.FC = () => {
                           )}
                         </div>
 
-                        {/* Sans antécédents (non assuré 36 mois) → RI non requis */}
-                        <div className="pt-3 border-t border-slate-100">
-                          <label className="flex items-center gap-3 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={!!pd?.sans_antecedents}
-                              onChange={e => updateProspect(id!, { product_data: {
-                                ...(pd || { type: 'vehicule' as const }),
-                                sans_antecedents: e.target.checked,
-                                ...(e.target.checked && (pd?.bonus_malus == null) ? { bonus_malus: 1.0 } : {}),
-                              } })}
-                              className="w-4 h-4 rounded border-slate-300 text-[#4F7CFF]"
-                            />
-                            <span className="text-sm font-bold text-slate-700">Conducteur sans antécédents <span className="text-slate-400 font-medium">(non assuré sur 36 mois — RI non requis)</span></span>
-                          </label>
-                        </div>
+                        {/* Sans antécédents — masqué si RI déjà extrait (non pertinent) */}
+                        {!hasRIData && (
+                          <div className="pt-3 border-t border-slate-100">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={!!pd?.sans_antecedents}
+                                onChange={e => updateProspect(id!, { product_data: {
+                                  ...(pd || { type: 'vehicule' as const }),
+                                  sans_antecedents: e.target.checked,
+                                  ...(e.target.checked && (pd?.bonus_malus == null) ? { bonus_malus: 1.0 } : {}),
+                                } })}
+                                className="w-4 h-4 rounded border-slate-300 text-[#4F7CFF]"
+                              />
+                              <span className="text-sm font-bold text-slate-700">Conducteur sans antécédents <span className="text-slate-400 font-medium">(non assuré sur 36 mois — RI non requis)</span></span>
+                            </label>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -759,7 +841,10 @@ const ProspectDetail: React.FC = () => {
                     {phase1Docs.map(doc => {
                       const airtableFiles = prospect.airtable_attachments?.[doc.type];
                       const atDoc = findAirtableDoc(doc.type);
+                      // Pour le RI : considéré reçu si RI_Traité = true dans Airtable (extrait par n8n)
+                      const riTraite = doc.type === 'releve_information' && !!prospect.airtable_dossier_fields?.RI_Traité;
                       const isUploaded =
+                        riTraite ||
                         docsUploaded.includes(doc.type) ||
                         (airtableFiles?.length ?? 0) > 0 ||
                         !!atDoc;
@@ -791,7 +876,9 @@ const ProspectDetail: React.FC = () => {
                               <div>
                                 <p className="text-base font-bold text-slate-900">{doc.label}</p>
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="text-[11px] text-slate-400 font-bold uppercase">{isScanningThis ? "Téléversement en cours..." : doc.description}</p>
+                                  <p className="text-[11px] text-slate-400 font-bold uppercase">
+                                    {isScanningThis ? 'Téléversement en cours...' : riTraite ? 'Extrait et traité par n8n' : doc.description}
+                                  </p>
                                   {!isUploaded && doc.phase === 1 && (() => {
                                     // RI non requis si conducteur sans antécédents
                                     const riNonRequis = sansAntecedents && doc.type === 'releve_information';
@@ -848,7 +935,12 @@ const ProspectDetail: React.FC = () => {
                               ) : !isUploaded && isScanningThis ? (
                                 <span className="px-4 py-2 text-blue-500 font-black text-[9px] uppercase tracking-widest">Analyse...</span>
                               ) : (
-                                <span className="px-4 py-2 bg-green-50 text-green-600 rounded-xl font-black text-[9px] uppercase border border-green-100">Reçu</span>
+                                <>
+                                  <span className="px-4 py-2 bg-green-50 text-green-600 rounded-xl font-black text-[9px] uppercase border border-green-100">Reçu</span>
+                                  {(doc.max_files ?? 1) > 1 && (
+                                    <button onClick={() => triggerFileUpload(doc.type, 1)} title="Ajouter le verso" className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black text-slate-500 uppercase tracking-widest hover:border-[#4F7CFF]/40 hover:text-[#4F7CFF] transition-all flex items-center gap-1"><Plus size={11} /> Verso</button>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>
@@ -900,68 +992,98 @@ const ProspectDetail: React.FC = () => {
                   </div>
 
                   {/* Extraction RI — uniquement pour produits auto/moto/flotte */}
-                  {/^(AUT|MOT|CYCLO|FLO_AUT|auto|moto|cyclo|flotte)/i.test(productKey) && (
-                    sansAntecedents ? (
-                    <div className="mt-6 p-4 rounded-2xl border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500 flex items-center gap-2">
-                      <Info size={14} /> Relevé d'Information non requis — conducteur sans antécédents (non assuré sur 36 mois).
-                    </div>
+                  {/^(AUT|MOT|CYCLO|FLO_AUT|auto|moto|cyclo|flotte)/i.test(productKey) && (() => {
+                    const pd = prospect.product_data?.type === 'vehicule' ? prospect.product_data : null;
+                    // RI déjà traité par n8n (chargé depuis Airtable) ou par upload en session
+                    const riFromAirtable = !!prospect.airtable_dossier_fields?.RI_Traité && pd?.bonus_malus !== undefined;
+                    return sansAntecedents ? (
+                      <div className="mt-6 p-4 rounded-2xl border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500 flex items-center gap-2">
+                        <Info size={14} /> Relevé d'Information non requis — conducteur sans antécédents (non assuré sur 36 mois).
+                      </div>
                     ) : (
-                    <div className="mt-6 p-5 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/30">
-                      <div className="flex items-center gap-4 mb-3">
-                        <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
-                          <Search size={20} />
+                      <div className={`mt-6 p-5 rounded-2xl border-2 ${riFromAirtable || riExtrait ? 'border-green-200 bg-green-50/30' : 'border-dashed border-indigo-200 bg-indigo-50/30'}`}>
+                        <div className="flex items-center gap-4 mb-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${riFromAirtable || riExtrait ? 'bg-green-100 text-green-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                            {riFromAirtable || riExtrait ? <CheckCircle size={20} /> : <Search size={20} />}
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-slate-900">Extraction Relevé d'Information</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase">
+                              {riFromAirtable ? 'Extrait par n8n · Données disponibles' : 'IA Gemini • Lancée automatiquement au chargement du RI'}
+                            </p>
+                          </div>
+                          {(riFromAirtable || riExtrait) && !isExtractingRI && (
+                            <span className="ml-auto flex items-center gap-1 px-3 py-1 rounded-lg bg-green-100 text-green-700 text-[10px] font-black uppercase">
+                              <CheckCircle size={12} /> RI Extrait
+                            </span>
+                          )}
+                          {isExtractingRI && (
+                            <span className="ml-auto flex items-center gap-1 px-3 py-1 rounded-lg bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase">
+                              <Loader2 size={12} className="animate-spin" /> Analyse IA…
+                            </span>
+                          )}
                         </div>
-                        <div>
-                          <p className="text-sm font-black text-slate-900">Extraction Relevé d'Information</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase">IA Gemini • Lancée automatiquement au chargement du RI</p>
-                        </div>
-                        {riExtrait && (
-                          <span className="ml-auto flex items-center gap-1 px-3 py-1 rounded-lg bg-green-100 text-green-700 text-[10px] font-black uppercase">
-                            <CheckCircle size={12} /> RI Extrait
-                          </span>
+                        {riExtractionError && (
+                          <p className="text-xs text-red-500 font-bold mb-3">{riExtractionError}</p>
                         )}
-                        {isExtractingRI && (
-                          <span className="ml-auto flex items-center gap-1 px-3 py-1 rounded-lg bg-indigo-100 text-indigo-600 text-[10px] font-black uppercase">
-                            <Loader2 size={12} className="animate-spin" /> Analyse IA…
-                          </span>
+                        {riExtrait ? (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                            <div className="bg-white rounded-lg p-2 border border-slate-100">
+                              <span className="text-[9px] text-slate-400 font-black uppercase block">Bonus/Malus</span>
+                              <span className={`font-bold ${(riExtrait.bonus_malus || 0) > 1 ? 'text-orange-600' : 'text-green-600'}`}>{riExtrait.bonus_malus}</span>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 border border-slate-100">
+                              <span className="text-[9px] text-slate-400 font-black uppercase block">Compagnie</span>
+                              <span className="font-bold text-slate-900">{riExtrait.compagnie_precedente || '—'}</span>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 border border-slate-100">
+                              <span className="text-[9px] text-slate-400 font-black uppercase block">Sinistres 36m</span>
+                              <span className={`font-bold ${(riExtrait.nb_sinistres_36m || 0) > 0 ? 'text-orange-600' : 'text-green-600'}`}>{riExtrait.nb_sinistres_36m}</span>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 border border-slate-100">
+                              <span className="text-[9px] text-slate-400 font-black uppercase block">Résilié</span>
+                              <span className={`font-bold ${riExtrait.resilie ? 'text-red-600' : 'text-green-600'}`}>{riExtrait.resilie ? 'OUI' : 'NON'}</span>
+                            </div>
+                          </div>
+                        ) : riFromAirtable && pd ? (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                            <div className="bg-white rounded-lg p-2 border border-slate-100">
+                              <span className="text-[9px] text-slate-400 font-black uppercase block">Bonus/Malus</span>
+                              <span className={`font-bold ${(pd.bonus_malus || 0) > 1 ? 'text-orange-600' : 'text-green-600'}`}>{pd.bonus_malus?.toFixed(2)}</span>
+                            </div>
+                            {pd.nb_mois != null && (
+                              <div className="bg-white rounded-lg p-2 border border-slate-100">
+                                <span className="text-[9px] text-slate-400 font-black uppercase block">Mois cumulés</span>
+                                <span className="font-bold text-slate-900">{pd.nb_mois} mois</span>
+                              </div>
+                            )}
+                            <div className="bg-white rounded-lg p-2 border border-slate-100">
+                              <span className="text-[9px] text-slate-400 font-black uppercase block">Compagnie</span>
+                              <span className="font-bold text-slate-900">{pd.compagnie_precedente || '—'}</span>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 border border-slate-100">
+                              <span className="text-[9px] text-slate-400 font-black uppercase block">Sinistres 36m</span>
+                              <span className={`font-bold ${(pd.nb_sinistres_36m || 0) > 0 ? 'text-orange-600' : 'text-green-600'}`}>{pd.nb_sinistres_36m ?? '—'}</span>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 border border-slate-100">
+                              <span className="text-[9px] text-slate-400 font-black uppercase block">Résilié</span>
+                              <span className={`font-bold ${pd.resilie ? 'text-red-600' : 'text-green-600'}`}>{pd.resilie ? 'OUI' : 'NON'}</span>
+                            </div>
+                          </div>
+                        ) : isExtractingRI ? (
+                          <div className="flex items-center justify-center gap-3 py-4 rounded-xl border-2 border-indigo-300 bg-indigo-100 text-indigo-600">
+                            <Loader2 size={18} className="animate-spin" /> Extraction IA en cours…
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-500 font-medium">
+                            {riExtractionError
+                              ? 'L\'analyse a échoué. Rechargez le document « Relevé(s) d\'Information 36 mois » ci-dessus pour relancer.'
+                              : 'Chargez le document « Relevé(s) d\'Information 36 mois » ci-dessus : l\'analyse IA se lance automatiquement.'}
+                          </p>
                         )}
                       </div>
-                      {riExtractionError && (
-                        <p className="text-xs text-red-500 font-bold mb-3">{riExtractionError}</p>
-                      )}
-                      {riExtrait ? (
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                          <div className="bg-white rounded-lg p-2 border border-slate-100">
-                            <span className="text-[9px] text-slate-400 font-black uppercase block">Bonus/Malus</span>
-                            <span className={`font-bold ${(riExtrait.bonus_malus || 0) > 1 ? 'text-orange-600' : 'text-green-600'}`}>{riExtrait.bonus_malus}</span>
-                          </div>
-                          <div className="bg-white rounded-lg p-2 border border-slate-100">
-                            <span className="text-[9px] text-slate-400 font-black uppercase block">Compagnie</span>
-                            <span className="font-bold text-slate-900">{riExtrait.compagnie_precedente || '—'}</span>
-                          </div>
-                          <div className="bg-white rounded-lg p-2 border border-slate-100">
-                            <span className="text-[9px] text-slate-400 font-black uppercase block">Sinistres 36m</span>
-                            <span className={`font-bold ${(riExtrait.nb_sinistres_36m || 0) > 0 ? 'text-orange-600' : 'text-green-600'}`}>{riExtrait.nb_sinistres_36m}</span>
-                          </div>
-                          <div className="bg-white rounded-lg p-2 border border-slate-100">
-                            <span className="text-[9px] text-slate-400 font-black uppercase block">Résilié</span>
-                            <span className={`font-bold ${riExtrait.resilie ? 'text-red-600' : 'text-green-600'}`}>{riExtrait.resilie ? 'OUI' : 'NON'}</span>
-                          </div>
-                        </div>
-                      ) : isExtractingRI ? (
-                        <div className="flex items-center justify-center gap-3 py-4 rounded-xl border-2 border-indigo-300 bg-indigo-100 text-indigo-600">
-                          <Loader2 size={18} className="animate-spin" /> Extraction IA en cours…
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-slate-500 font-medium">
-                          {riExtractionError
-                            ? 'L’analyse a échoué. Rechargez le document « Relevé(s) d’Information 36 mois » ci-dessus pour relancer.'
-                            : 'Chargez le document « Relevé(s) d’Information 36 mois » ci-dessus : l’analyse IA se lance automatiquement.'}
-                        </p>
-                      )}
-                    </div>
-                    )
-                  )}
+                    );
+                  })()}
 
                   <div ref={matchingRef} className="mt-10 pt-8 border-t border-slate-100 scroll-mt-6">
                     {/* Alerte docs bloquants manquants */}
@@ -1607,16 +1729,30 @@ const ProspectDetail: React.FC = () => {
                   <button onClick={() => setPreviewingDoc(null)} className="p-3 text-slate-400 hover:text-slate-900 rounded-full hover:bg-slate-100 transition-all"><X size={24}/></button>
                 </div>
               </div>
-              <div className="flex-1 bg-slate-100 flex items-center justify-center p-10">
-                {previewingDoc.url ? (
-                  <iframe src={previewingDoc.url} className="w-full h-full rounded-lg border border-slate-200 bg-white" title={previewingDoc.label} />
-                ) : (
-                  <div className="bg-white w-full h-full shadow-lg rounded-lg flex flex-col items-center justify-center p-20 text-center">
-                    <CheckCircle size={80} className="text-green-200 mb-6" />
-                    <p className="text-lg font-black text-slate-900 mb-2">Document reçu</p>
-                    <p className="text-sm text-slate-400 font-bold">L'aperçu sera disponible une fois le document traité par la GED.</p>
+              <div className="flex-1 bg-slate-50 flex items-center justify-center p-10">
+                <div className="bg-white w-full h-full shadow-sm rounded-2xl flex flex-col items-center justify-center p-10 text-center gap-6 border border-slate-100">
+                  <div className="w-20 h-20 rounded-2xl bg-blue-50 border-2 border-blue-100 flex items-center justify-center">
+                    <FileText size={36} className="text-[#4F7CFF]" />
                   </div>
-                )}
+                  <div>
+                    <p className="text-lg font-black text-slate-900 mb-1">{previewingDoc.label}</p>
+                    {previewingDoc.url ? (
+                      <p className="text-sm text-slate-400 font-bold">Stocké dans la GED (Dropbox).<br/>Cliquez pour ouvrir et vérifier le document.</p>
+                    ) : (
+                      <p className="text-sm text-slate-400 font-bold">Document reçu — traitement GED en cours.</p>
+                    )}
+                  </div>
+                  {previewingDoc.url && (
+                    <a
+                      href={previewingDoc.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-8 py-4 rounded-2xl bg-[#4F7CFF] text-white font-black text-sm flex items-center gap-3 hover:bg-blue-600 transition-all shadow-md"
+                    >
+                      <Eye size={18} /> Ouvrir le document
+                    </a>
+                  )}
+                </div>
               </div>
             </motion.div>
           </div>

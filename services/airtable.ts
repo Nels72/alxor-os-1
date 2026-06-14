@@ -223,6 +223,7 @@ export function mapDocTypeToAirtable(workflowType: string): DocumentType {
 
 // ── Mapping produits via PRODUCT_CATALOG ────────────────────
 import { PRODUCT_CATALOG, getProductByCode } from '../lib/productCatalog';
+import { hydrateAutoProductData, isVehiculeProduct } from '../lib/prospectProductData';
 
 /** Legacy front keys → code Airtable (rétrocompat anciens stores/données) */
 const LEGACY_TO_CODE: Record<string, string> = {
@@ -285,6 +286,18 @@ export async function getContactById(recordId: string): Promise<AirtableContact>
   return response.json();
 }
 
+export async function updateContact(
+  recordId: string,
+  fields: Partial<AirtableContact['fields']>
+): Promise<AirtableContact> {
+  const response = await airtableFetch(`${AIRTABLE_API_URL}/Contacts/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields }),
+  });
+  if (!response.ok) throw new Error(`Erreur Airtable Contact: ${response.status}`);
+  return response.json();
+}
+
 // ============================
 // DOSSIERS
 // ============================
@@ -336,7 +349,9 @@ export async function listDossiers(filterFormula?: string): Promise<AirtableDoss
 // ============================
 
 export async function getDocumentsByDossier(dossierId: string): Promise<AirtableDocument[]> {
-  const filterFormula = `FIND("${dossierId}", ARRAYJOIN({Dossier}))`;
+  // {Dossier} en formule Airtable résout vers le champ primaire (ID_Dossier = "DOS_" + 6 derniers chars du recId)
+  const idDossier = `DOS_${dossierId.slice(-6)}`;
+  const filterFormula = `{Dossier}="${idDossier}"`;
   const response = await airtableFetch(
     `${AIRTABLE_API_URL}/Documents?filterByFormula=${encodeURIComponent(filterFormula)}`
   );
@@ -475,6 +490,43 @@ export function mapDossierToProspect(
     'Résilié': 'converti',
   };
 
+  const typeContrat = mapAirtableToProduct(f.Type_Contrat || '');
+
+  // Hydrate product_data depuis les champs RI déjà en Airtable
+  // Le RI_JSON de n8n a une structure IMBRIQUÉE : { vehicule: { marque }, bonus_malus: { coefficient } }
+  // On le normalise en structure PLATE attendue par hydrateAutoProductData
+  let riJsonFlat: Record<string, unknown> = {};
+  if (f.RI_JSON && typeof f.RI_JSON === 'string') {
+    try {
+      const raw = JSON.parse(f.RI_JSON) as Record<string, unknown>;
+      const bm = raw.bonus_malus as Record<string, unknown> | undefined;
+      const veh = raw.vehicule as Record<string, unknown> | undefined;
+      const meta = raw.meta as Record<string, unknown> | undefined;
+      riJsonFlat = {
+        vehicule_marque:    veh?.marque ?? null,
+        vehicule_modele:    veh?.modele ?? null,
+        vehicule_usage:     veh?.usage ?? null,
+        vehicule_categorie: veh?.categorie ?? null,
+        bm_nb_annees_050:   bm?.nb_annees_050 ?? null,
+        date_releve:        meta?.date_releve ?? null,
+        date_effet_contrat: meta?.date_effet_contrat ?? null,
+        nb_mois:            (() => {
+          const d0 = meta?.date_effet_contrat as string | undefined;
+          const d1 = meta?.date_releve as string | undefined;
+          if (!d0 || !d1) return null;
+          const start = new Date(d0), end = new Date(d1);
+          return (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+        })(),
+        date_echeance:      bm?.date_echeance ?? null,
+        formule_actuelle:   meta?.formule_actuelle ?? null,
+        sinistres:          Array.isArray(raw.sinistres) ? raw.sinistres : undefined,
+      };
+    } catch {}
+  }
+  const product_data = isVehiculeProduct(typeContrat)
+    ? hydrateAutoProductData(f as Record<string, unknown>, riJsonFlat)
+    : undefined;
+
   return {
     id: dossier.id,
     nom: c?.Nom || '',
@@ -482,7 +534,9 @@ export function mapDossierToProspect(
     email: c?.Email || '',
     telephone: c?.['Téléphone'] || '',
     adresse: c?.Adresse || '',
-    type_contrat_demande: mapAirtableToProduct(f.Type_Contrat || ''),
+    civilite: c?.Civilite,
+    date_naissance: c?.Date_Naissance,
+    type_contrat_demande: typeContrat,
     statut: statutMap[f.Statut_Dossier || ''] || 'nouveau',
     ges_score: f['GES Score'] || 0,
     created_at: f.Date_Création || new Date().toISOString(),
@@ -490,6 +544,8 @@ export function mapDossierToProspect(
     contact_id: contact?.id,
     priority: 'Moyenne' as const,
     descriptif_projet: f.Message_Initial || '',
+    airtable_dossier_fields: f as Record<string, unknown>,
+    ...(product_data ? { product_data } : {}),
   };
 }
 

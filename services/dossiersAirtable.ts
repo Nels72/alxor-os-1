@@ -1,6 +1,7 @@
 import type { Prospect } from '../types';
 import type { AirtableRecord } from './airtableService';
 import { airtableFetch } from './airtable';
+import { hydrateAutoProductData, isVehiculeProduct } from '../lib/prospectProductData';
 
 const BEARER =
   process.env.REACT_APP_AIRTABLE_TOKEN ||
@@ -352,6 +353,38 @@ export async function mapDossierToProspect(
       )
     : undefined;
 
+  // Hydrate product_data pour les produits véhicule (RI déjà extrait par n8n)
+  let riJsonFlat: Record<string, unknown> = {};
+  const riJsonRaw = f['RI_JSON'];
+  if (typeof riJsonRaw === 'string' && riJsonRaw) {
+    try {
+      const raw = JSON.parse(riJsonRaw) as Record<string, unknown>;
+      const bm = raw.bonus_malus as Record<string, unknown> | undefined;
+      const veh = raw.vehicule as Record<string, unknown> | undefined;
+      const meta = raw.meta as Record<string, unknown> | undefined;
+      const d0 = meta?.date_effet_contrat as string | undefined;
+      const d1 = meta?.date_releve as string | undefined;
+      riJsonFlat = {
+        vehicule_marque:    veh?.marque ?? null,
+        vehicule_modele:    veh?.modele ?? null,
+        vehicule_usage:     veh?.usage ?? null,
+        vehicule_categorie: veh?.categorie ?? null,
+        bm_nb_annees_050:   bm?.nb_annees_050 ?? null,
+        date_releve:        d1 ?? null,
+        date_effet_contrat: d0 ?? null,
+        nb_mois: (d0 && d1)
+          ? (() => { const s = new Date(d0), e = new Date(d1); return (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()); })()
+          : null,
+        date_echeance:    bm?.date_echeance ?? null,
+        formule_actuelle: meta?.formule_actuelle ?? null,
+        sinistres: Array.isArray(raw.sinistres) ? raw.sinistres : undefined,
+      };
+    } catch {}
+  }
+  const product_data = isVehiculeProduct(typeLabel)
+    ? hydrateAutoProductData(f, riJsonFlat)
+    : undefined;
+
   return {
     id: dossier.id,
     nom: nom.trim() || '—',
@@ -374,6 +407,7 @@ export async function mapDossierToProspect(
     airtable_attachments:
       Object.keys(attachments).length > 0 ? attachments : undefined,
     airtable_dossier_fields: f,
+    ...(product_data ? { product_data } : {}),
   };
 }
 
