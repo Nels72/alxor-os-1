@@ -35,9 +35,13 @@ import {
   Copy,
   FolderOpen,
   PenLine,
-  RotateCw
+  RotateCw,
+  Shield,
+  Plus,
+  Pencil,
+  Save,
+  FileArchive,
 } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useStore } from '../store';
 import { getProductLabel } from '../lib/productCatalog';
 import { PriorityLevel, Client, Contrat, Amendment, Prospect } from '../types';
@@ -65,8 +69,28 @@ import {
 import {
   listCollaborateurs,
   reprendreDossier,
+  createCollaborateur,
+  updateCollaborateur,
   Collaborateur,
+  CollaborateurRole,
+  CollaborateurStatut,
 } from '../services/collaborateursAirtable';
+import {
+  listDocumentsCabinet,
+  createDocumentCabinet,
+  deleteDocumentCabinet,
+  DocumentCabinet,
+  DocCabinetCategorie,
+} from '../services/documentsCabinetAirtable';
+import {
+  listApporteurs,
+  updateApporteur,
+  fetchDossiersApporteur,
+  Apporteur,
+  ApporteurDossier,
+  ApporteurStatut,
+  ActivationFormulaire,
+} from '../services/apporteursAirtable';
 
 /** Cache Dashboard : évite de recharger Airtable à chaque navigation */
 let dashboardCache: { data: import('../types').Prospect[]; ts: number } | null = null;
@@ -170,13 +194,6 @@ function getContractPillColor(typeContrat: string): string {
   return 'bg-slate-400';
 }
 
-const CHART_DATA = [
-  { name: 'Jan', val: 8000 },
-  { name: 'Fév', val: 9500 },
-  { name: 'Mar', val: 12000 },
-  { name: 'Avr', val: 11000 },
-  { name: 'Mai', val: 14500 },
-];
 
 const PRIORITY_BADGE: Record<PriorityLevel, string> = {
   Critique: 'bg-red-50 text-red-600 border-red-100',
@@ -284,11 +301,84 @@ const Dashboard: React.FC = () => {
   const [collaborateurs, setCollaborateurs] = useState<Collaborateur[]>([]);
   const [reprendreEnCours, setReprendreEnCours] = useState<string | null>(null);
 
+  // ----- Documents Cabinet -----
+  const [docsCabinet, setDocsCabinet] = useState<DocumentCabinet[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+  const [docsTableMissing, setDocsTableMissing] = useState(false);
+  const [showAddDoc, setShowAddDoc] = useState(false);
+  const [newDoc, setNewDoc] = useState<{ nom: string; categorie: DocCabinetCategorie; url: string; notes: string; date_expiration: string }>({
+    nom: '', categorie: 'Autre', url: '', notes: '', date_expiration: '',
+  });
+  const [docSaving, setDocSaving] = useState(false);
+
+  // ----- Administration Cabinet -----
+  const [adminCollab, setAdminCollab] = useState<Collaborateur[]>([]);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [editingCollabId, setEditingCollabId] = useState<string | null>(null);
+  const [editFields, setEditFields] = useState<{ statut: CollaborateurStatut; role: CollaborateurRole; mdpProv: string }>({ statut: 'Actif', role: 'Commercial', mdpProv: '' });
+  const [showAddCollab, setShowAddCollab] = useState(false);
+  const [newCollab, setNewCollab] = useState<{ prenom: string; nom: string; email: string; role: CollaborateurRole; mdpProv: string }>({
+    prenom: '', nom: '', email: '', role: 'Commercial', mdpProv: '',
+  });
+  const [collabSaving, setCollabSaving] = useState(false);
+
+  // ----- Apporteurs -----
+  const [apporteurs, setApporteurs] = useState<Apporteur[]>([]);
+  const [apporteursLoading, setApporteursLoading] = useState(false);
+  const [expandedApporteurId, setExpandedApporteurId] = useState<string | null>(null);
+  const [apporteurDossiers, setApporteurDossiers] = useState<Record<string, ApporteurDossier[]>>({});
+  const [apporteurDossiersLoading, setApporteurDossiersLoading] = useState<string | null>(null);
+  const [editingApporteurId, setEditingApporteurId] = useState<string | null>(null);
+  const [editApporteurFields, setEditApporteurFields] = useState<{
+    statut: ApporteurStatut;
+    activationFormulaire: ActivationFormulaire;
+    commissionDefaut: string;
+    collaborateurIds: string[];
+    notes: string;
+  }>({ statut: 'Actif', activationFormulaire: 'Actif', commissionDefaut: '', collaborateurIds: [], notes: '' });
+  const [apporteurSaving, setApporteurSaving] = useState(false);
+  const [adminSubTab, setAdminSubTab] = useState<'collaborateurs' | 'apporteurs'>('collaborateurs');
+
+  const isAdmin = currentCollaborateur?.role === 'Admin';
+
   useEffect(() => {
     listCollaborateurs()
-      .then(setCollaborateurs)
+      .then((list) => { setCollaborateurs(list); setAdminCollab(list); })
       .catch((err) => console.error('[Collaborateurs] Échec chargement:', err));
   }, []);
+
+  useEffect(() => {
+    if (tab !== 'docs') return;
+    setDocsLoading(true);
+    setDocsError(null);
+    listDocumentsCabinet()
+      .then((docs) => { setDocsCabinet(docs); setDocsTableMissing(false); })
+      .catch((err) => {
+        const msg = String(err);
+        if (msg.includes('404') || msg.includes('422')) setDocsTableMissing(true);
+        else setDocsError('Erreur chargement documents. Vérifiez la configuration Airtable.');
+      })
+      .finally(() => setDocsLoading(false));
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== 'settings' && tab !== 'admin') return;
+    if (adminCollab.length === 0) {
+      setAdminLoading(true);
+      listCollaborateurs()
+        .then((list) => setAdminCollab(list))
+        .catch((err) => console.error('[Admin] Échec chargement collabs:', err))
+        .finally(() => setAdminLoading(false));
+    }
+    if (apporteurs.length === 0) {
+      setApporteursLoading(true);
+      listApporteurs()
+        .then(setApporteurs)
+        .catch((err) => console.error('[Admin] Échec chargement apporteurs:', err))
+        .finally(() => setApporteursLoading(false));
+    }
+  }, [tab, adminCollab.length, apporteurs.length]);
 
   /** Titulaire (premier collaborateur assigné) d'un dossier */
   const getTitulaire = (p: Prospect): Collaborateur | null => {
@@ -379,11 +469,11 @@ const Dashboard: React.FC = () => {
   );
 
   const stats = useMemo(() => [
-    { label: "Prospects Actifs", val: prospects.length, icon: UserPlus, color: "#4F7CFF", trend: "+12%" },
-    { label: "Clients Totaux", val: clients.length, icon: Users, color: "#10B981", trend: "+3%" },
-    { label: "Comm. du Mois", val: "14,500 €", icon: DollarSign, color: "#2ED3B7", trend: "+24%" },
-    { label: "GES Moyen", val: `${gesMoyen}%`, icon: TrendingUp, color: "#F59E0B", trend: "+5%" },
-  ], [prospects.length, clients.length, gesMoyen]);
+    { label: "Dossiers en cours", val: fluxProspects.length, icon: UserPlus, color: "#4F7CFF" },
+    { label: "Clients", val: clients.length, icon: Users, color: "#10B981" },
+    { label: "GES Moyen", val: gesMoyen > 0 ? `${gesMoyen}%` : '—', icon: TrendingUp, color: "#F59E0B" },
+    { label: "Alertes actives", val: dashboardAlerts.length > 0 ? dashboardAlerts.length : '—', icon: AlertCircle, color: dashboardAlerts.length > 0 ? "#EF4444" : "#94a3b8" },
+  ], [fluxProspects.length, clients.length, gesMoyen, dashboardAlerts.length]);
 
   const getGesColor = (score: number) => {
     if (score >= 80) return '#10B981';
@@ -430,9 +520,6 @@ const Dashboard: React.FC = () => {
               <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${stat.color}15`, color: stat.color }}>
                 <stat.icon size={24} />
               </div>
-              <span className="text-xs font-bold text-green-500 bg-green-50 px-2 py-1 rounded">
-                {stat.trend}
-              </span>
             </div>
             <p className="text-slate-500 text-sm mb-1 font-medium">{stat.label}</p>
             <p className="text-2xl md:text-3xl font-bold text-slate-900">{stat.val}</p>
@@ -442,30 +529,13 @@ const Dashboard: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
         <div className="lg:col-span-2 bg-white border border-slate-200 p-5 md:p-8 rounded-2xl shadow-sm">
-          <div className="flex justify-between items-center mb-8">
-            <h3 className="text-xl font-bold text-slate-900">Performance financière</h3>
-            <select className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase outline-none text-slate-600 tracking-widest">
-              <option>Derniers 6 mois</option>
-            </select>
-          </div>
-          <div className="h-[250px] md:h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={CHART_DATA}>
-                <defs>
-                  <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#4F7CFF" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#4F7CFF" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="name" stroke="#94a3b8" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
-                <YAxis stroke="#94a3b8" axisLine={false} tickLine={false} tickFormatter={(val) => `${val/1000}k`} tick={{fontSize: 10}} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
-                />
-                <Area type="monotone" dataKey="val" stroke="#4F7CFF" strokeWidth={3} fillOpacity={1} fill="url(#colorVal)" />
-              </AreaChart>
-            </ResponsiveContainer>
+          <h3 className="text-xl font-bold text-slate-900 mb-4">Performance financière</h3>
+          <div className="h-[250px] md:h-[300px] flex items-center justify-center">
+            <div className="text-center">
+              <TrendingUp size={40} className="text-slate-200 mx-auto mb-3" />
+              <p className="text-sm font-bold text-slate-400">Données non disponibles</p>
+              <p className="text-xs text-slate-300 mt-1">Intégration comptable à venir</p>
+            </div>
           </div>
         </div>
 
@@ -488,30 +558,27 @@ const Dashboard: React.FC = () => {
           )}
 
         <div className="bg-white border border-slate-200 p-6 md:p-8 rounded-2xl shadow-sm">
-          <h3 className="text-xl font-bold mb-8 text-slate-900 tracking-tight">Capacité Collaborateur</h3>
-          <div className="flex flex-col items-center justify-center h-[200px]">
-            <div className="relative w-36 h-36 md:w-40 md:h-40">
-              <svg className="w-full h-full transform -rotate-90">
-                <circle cx="80" cy="80" r="70" stroke="#f1f5f9" strokeWidth="12" fill="transparent" />
-                <circle 
-                  cx="80" cy="80" r="70" stroke="#4F7CFF" strokeWidth="12" fill="transparent"
-                  strokeDasharray="440" strokeDashoffset={440 - (440 * 65 / 100)}
-                  strokeLinecap="round"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-black text-slate-900">65%</span>
-                <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Charge</span>
-              </div>
+          <h3 className="text-xl font-bold mb-6 text-slate-900 tracking-tight">Activité cabinet</h3>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between py-3 border-b border-slate-100">
+              <span className="text-sm font-medium text-slate-600">Dossiers en cours</span>
+              <span className="text-xl font-black text-slate-900">{fluxProspects.length}</span>
             </div>
-          </div>
-          <div className="mt-8 p-5 bg-blue-50 border border-blue-100 rounded-2xl">
-            <div className="flex gap-4">
-              <Clock className="text-[#4F7CFF] shrink-0" size={20} />
-              <div>
-                <p className="text-[11px] font-black text-[#4F7CFF] uppercase tracking-wider">Collaborateur OS</p>
-                <p className="text-xs text-blue-700 font-bold mt-1">Automatisation : <span className="font-black">140h/mois</span> libérées.</p>
-              </div>
+            <div className="flex items-center justify-between py-3 border-b border-slate-100">
+              <span className="text-sm font-medium text-slate-600">À traiter aujourd'hui</span>
+              <span className={`text-xl font-black ${topPriorites.length > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                {topPriorites.length || '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-3 border-b border-slate-100">
+              <span className="text-sm font-medium text-slate-600">Alertes actives</span>
+              <span className={`text-xl font-black ${dashboardAlerts.length > 0 ? 'text-orange-500' : 'text-slate-400'}`}>
+                {dashboardAlerts.length > 0 ? dashboardAlerts.length : '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-3">
+              <span className="text-sm font-medium text-slate-600">GES Moyen</span>
+              <span className="text-xl font-black text-slate-900">{gesMoyen > 0 ? `${gesMoyen}%` : '—'}</span>
             </div>
           </div>
         </div>
@@ -1195,6 +1262,670 @@ const Dashboard: React.FC = () => {
     </div>
   );
 
+  const DOC_CATEGORIES: DocCabinetCategorie[] = ['ORIAS', 'RCP', 'Mandat', 'DDA', 'Convention', 'Administratif', 'Légal', 'Protocole', 'Modèle', 'Autre'];
+
+  const handleAddDoc = async () => {
+    if (!newDoc.nom.trim()) return;
+    setDocSaving(true);
+    try {
+      const created = await createDocumentCabinet({
+        nom: newDoc.nom.trim(),
+        categorie: newDoc.categorie,
+        url: newDoc.url.trim() || undefined,
+        notes: newDoc.notes.trim() || undefined,
+        date_expiration: newDoc.date_expiration || undefined,
+      });
+      setDocsCabinet((prev) => [...prev, created]);
+      setNewDoc({ nom: '', categorie: 'Autre', url: '', notes: '', date_expiration: '' });
+      setShowAddDoc(false);
+    } catch (err) {
+      alert('Erreur lors de la création : ' + String(err));
+    } finally {
+      setDocSaving(false);
+    }
+  };
+
+  const handleDeleteDoc = async (id: string, nom: string) => {
+    if (!window.confirm(`Supprimer « ${nom} » ?`)) return;
+    try {
+      await deleteDocumentCabinet(id);
+      setDocsCabinet((prev) => prev.filter((d) => d.id !== id));
+    } catch (err) {
+      alert('Erreur suppression : ' + String(err));
+    }
+  };
+
+  const getExpirationStatus = (dateExp?: string): 'ok' | 'soon' | 'expired' | null => {
+    if (!dateExp) return null;
+    const exp = new Date(dateExp);
+    const now = new Date();
+    const diffJ = Math.round((exp.getTime() - now.getTime()) / 86400000);
+    if (diffJ < 0) return 'expired';
+    if (diffJ <= 30) return 'soon';
+    return 'ok';
+  };
+
+  const renderDocumentsCabinet = () => {
+    if (docsLoading) return (
+      <div className="flex items-center gap-3 py-16 justify-center text-slate-400">
+        <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+        <span className="text-sm font-medium">Chargement des documents…</span>
+      </div>
+    );
+    if (docsTableMissing) return (
+      <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
+        <AlertCircle size={32} className="text-red-400 mx-auto mb-3" />
+        <p className="text-sm font-bold text-red-700">Table <code className="bg-red-100 px-1 rounded font-mono">Documents_Cabinet</code> non configurée dans Airtable.</p>
+        <p className="text-xs text-red-500 mt-2">Créez la table avec les champs : Nom, Categorie, URL, Notes, Date_Upload, Date_Expiration.</p>
+      </div>
+    );
+    if (docsError) return (
+      <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
+        <p className="text-sm font-bold text-red-700">{docsError}</p>
+      </div>
+    );
+
+    const grouped = DOC_CATEGORIES.reduce<Record<string, DocumentCabinet[]>>((acc, cat) => {
+      const items = docsCabinet.filter((d) => d.categorie === cat);
+      if (items.length > 0) acc[cat] = items;
+      return acc;
+    }, {});
+
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <p className="text-sm text-slate-500">{docsCabinet.length} document{docsCabinet.length !== 1 ? 's' : ''} cabinet</p>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowAddDoc((v) => !v)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-colors"
+            >
+              <Plus size={14} /> Ajouter un document
+            </button>
+          )}
+        </div>
+
+        {showAddDoc && isAdmin && (
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
+            <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Nouveau document</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Nom *</label>
+                <input type="text" value={newDoc.nom} onChange={(e) => setNewDoc((p) => ({ ...p, nom: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4F7CFF]" placeholder="Ex : ORIAS 2025" />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Catégorie</label>
+                <select value={newDoc.categorie} onChange={(e) => setNewDoc((p) => ({ ...p, categorie: e.target.value as DocCabinetCategorie }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4F7CFF] bg-white">
+                  {DOC_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">URL Dropbox</label>
+                <input type="url" value={newDoc.url} onChange={(e) => setNewDoc((p) => ({ ...p, url: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4F7CFF]" placeholder="https://dropbox.com/..." />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Date d'expiration</label>
+                <input type="date" value={newDoc.date_expiration} onChange={(e) => setNewDoc((p) => ({ ...p, date_expiration: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4F7CFF]" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Notes</label>
+                <input type="text" value={newDoc.notes} onChange={(e) => setNewDoc((p) => ({ ...p, notes: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4F7CFF]" placeholder="Remarques, numéro…" />
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setShowAddDoc(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-100">Annuler</button>
+              <button type="button" onClick={handleAddDoc} disabled={docSaving || !newDoc.nom.trim()} className="px-6 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 disabled:opacity-50">
+                {docSaving ? 'Enregistrement…' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {docsCabinet.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center">
+            <FileArchive size={40} className="text-slate-200 mx-auto mb-4" />
+            <p className="text-sm font-bold text-slate-400">Aucun document cabinet enregistré.</p>
+            {isAdmin && <p className="text-xs text-slate-300 mt-1">Cliquez sur « Ajouter un document » pour commencer.</p>}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {Object.entries(grouped).map(([cat, docs]) => (
+              <div key={cat} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">{cat}</h4>
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {docs.map((doc) => {
+                    const expStatus = getExpirationStatus(doc.date_expiration);
+                    return (
+                      <li key={doc.id} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50 transition-colors">
+                        <FileText size={16} className="text-slate-300 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{doc.nom}</p>
+                          {doc.notes && <p className="text-xs text-slate-400 truncate mt-0.5">{doc.notes}</p>}
+                        </div>
+                        {doc.date_expiration && (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border whitespace-nowrap shrink-0 ${
+                            expStatus === 'expired' ? 'bg-red-50 text-red-600 border-red-100' :
+                            expStatus === 'soon' ? 'bg-orange-50 text-orange-600 border-orange-100' :
+                            'bg-slate-50 text-slate-500 border-slate-100'
+                          }`}>
+                            {expStatus === 'expired' ? 'Expiré' : expStatus === 'soon' ? 'Bientôt' : ''} {doc.date_expiration}
+                          </span>
+                        )}
+                        {doc.url && (
+                          <a href={doc.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 shrink-0">
+                            <ExternalLink size={12} /> Ouvrir
+                          </a>
+                        )}
+                        {isAdmin && (
+                          <button type="button" onClick={() => handleDeleteDoc(doc.id, doc.nom)} className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const handleSaveCollab = async (collab: Collaborateur) => {
+    setCollabSaving(true);
+    try {
+      await updateCollaborateur(collab.id, {
+        statut: editFields.statut,
+        role: editFields.role,
+        mdpProv: editFields.mdpProv || undefined,
+      });
+      setAdminCollab((prev) => prev.map((c) =>
+        c.id === collab.id ? { ...c, statutActivite: editFields.statut, role: editFields.role } : c
+      ));
+      setEditingCollabId(null);
+    } catch (err) {
+      alert('Erreur mise à jour : ' + String(err));
+    } finally {
+      setCollabSaving(false);
+    }
+  };
+
+  const handleAddCollab = async () => {
+    if (!newCollab.prenom.trim() || !newCollab.nom.trim() || !newCollab.email.trim()) return;
+    setCollabSaving(true);
+    try {
+      const created = await createCollaborateur({
+        prenom: newCollab.prenom.trim(),
+        nom: newCollab.nom.trim(),
+        email: newCollab.email.trim(),
+        role: newCollab.role,
+        statut: 'Actif',
+        mdpProv: newCollab.mdpProv.trim() || undefined,
+      });
+      setAdminCollab((prev) => [...prev, created]);
+      setNewCollab({ prenom: '', nom: '', email: '', role: 'Commercial', mdpProv: '' });
+      setShowAddCollab(false);
+    } catch (err) {
+      alert('Erreur création collaborateur : ' + String(err));
+    } finally {
+      setCollabSaving(false);
+    }
+  };
+
+  const handleToggleApporteur = async (apporteur: Apporteur) => {
+    if (expandedApporteurId === apporteur.id) {
+      setExpandedApporteurId(null);
+      return;
+    }
+    setExpandedApporteurId(apporteur.id);
+    if (apporteurDossiers[apporteur.id] !== undefined) return; // déjà chargé
+    if (apporteur.dossierIds.length === 0) {
+      setApporteurDossiers((p) => ({ ...p, [apporteur.id]: [] }));
+      return;
+    }
+    setApporteurDossiersLoading(apporteur.id);
+    try {
+      const dossiers = await fetchDossiersApporteur(apporteur.dossierIds);
+      setApporteurDossiers((p) => ({ ...p, [apporteur.id]: dossiers }));
+    } catch (err) {
+      console.error('[Apporteur dossiers] Erreur:', err);
+      setApporteurDossiers((p) => ({ ...p, [apporteur.id]: [] }));
+    } finally {
+      setApporteurDossiersLoading(null);
+    }
+  };
+
+  const handleSaveApporteur = async (apporteur: Apporteur) => {
+    setApporteurSaving(true);
+    try {
+      const updated = await updateApporteur(apporteur.id, {
+        statut: editApporteurFields.statut,
+        activationFormulaire: editApporteurFields.activationFormulaire,
+        commissionDefaut: editApporteurFields.commissionDefaut !== '' ? parseFloat(editApporteurFields.commissionDefaut) / 100 : undefined,
+        collaborateurIds: editApporteurFields.collaborateurIds,
+        notes: editApporteurFields.notes || undefined,
+      });
+      setApporteurs((prev) => prev.map((a) => (a.id === apporteur.id ? updated : a)));
+      setEditingApporteurId(null);
+    } catch (err) {
+      alert('Erreur mise à jour apporteur : ' + String(err));
+    } finally {
+      setApporteurSaving(false);
+    }
+  };
+
+  const renderAdmin = () => (
+    <div className="space-y-6">
+      {/* Sous-onglets */}
+      <div className="flex gap-1 border-b border-slate-200">
+        {([
+          { key: 'collaborateurs', label: 'Collaborateurs', count: adminCollab.length },
+          { key: 'apporteurs', label: 'Apporteurs', count: apporteurs.length },
+        ] as const).map(({ key, label, count }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setAdminSubTab(key)}
+            className={`px-5 py-2.5 text-xs font-black uppercase tracking-widest border-b-2 transition-colors ${
+              adminSubTab === key
+                ? 'border-slate-900 text-slate-900'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            {label}
+            {count > 0 && (
+              <span className="ml-2 text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Collaborateurs ─────────────────────────────────────────────── */}
+      {adminSubTab === 'collaborateurs' && (
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Shield size={18} className="text-slate-400" />
+              <h3 className="text-base font-black text-slate-900 uppercase tracking-widest">Collaborateurs</h3>
+            </div>
+            {isAdmin && (
+              <button type="button" onClick={() => setShowAddCollab((v) => !v)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-colors">
+                <Plus size={14} /> Nouveau
+              </button>
+            )}
+          </div>
+
+          {!isAdmin && (
+            <div className="px-6 py-3 bg-amber-50 border-b border-amber-100 text-xs font-bold text-amber-700">
+              Lecture seule — seul un Admin peut modifier les collaborateurs.
+            </div>
+          )}
+
+          {showAddCollab && isAdmin && (
+            <div className="p-6 bg-slate-50 border-b border-slate-200 space-y-4">
+              <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Nouveau collaborateur</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Prénom *</label>
+                  <input type="text" value={newCollab.prenom} onChange={(e) => setNewCollab((p) => ({ ...p, prenom: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4F7CFF]" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Nom *</label>
+                  <input type="text" value={newCollab.nom} onChange={(e) => setNewCollab((p) => ({ ...p, nom: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4F7CFF]" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Email Pro *</label>
+                  <input type="email" value={newCollab.email} onChange={(e) => setNewCollab((p) => ({ ...p, email: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4F7CFF]" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Rôle</label>
+                  <select value={newCollab.role} onChange={(e) => setNewCollab((p) => ({ ...p, role: e.target.value as CollaborateurRole }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4F7CFF] bg-white">
+                    {(['Admin', 'Commercial', 'Assistant', 'Stagiaire'] as CollaborateurRole[]).map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">MDP provisoire</label>
+                  <input type="text" value={newCollab.mdpProv} onChange={(e) => setNewCollab((p) => ({ ...p, mdpProv: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#4F7CFF] font-mono" placeholder="Optionnel" />
+                </div>
+              </div>
+              <div className="flex gap-3 justify-end">
+                <button type="button" onClick={() => setShowAddCollab(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-100">Annuler</button>
+                <button type="button" onClick={handleAddCollab} disabled={collabSaving || !newCollab.prenom.trim() || !newCollab.nom.trim() || !newCollab.email.trim()} className="px-6 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 disabled:opacity-50">
+                  {collabSaving ? 'Création…' : 'Créer'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {adminLoading ? (
+            <div className="flex items-center gap-3 px-6 py-8 text-slate-400">
+              <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm">Chargement…</span>
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {adminCollab.map((c) => {
+                const isEditing = editingCollabId === c.id;
+                const apporteursAssignes = apporteurs.filter((a) => a.collaborateurIds.includes(c.id));
+                return (
+                  <li key={c.id} className="px-6 py-4">
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-sm font-black text-slate-600 shrink-0">
+                        {c.nom.slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-900">{c.nom}</p>
+                        <p className="text-xs text-slate-400">{c.email || '—'}</p>
+                        {apporteursAssignes.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {apporteursAssignes.map((a) => (
+                              <span key={a.id} className="text-[9px] font-bold bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded">
+                                {a.nom}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {!isEditing && (
+                        <>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${c.statutActivite === 'Actif' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-orange-50 text-orange-700 border-orange-100'}`}>
+                            {c.statutActivite}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{c.role}</span>
+                          {isAdmin && (
+                            <button type="button" onClick={() => { setEditingCollabId(c.id); setEditFields({ statut: c.statutActivite, role: c.role, mdpProv: '' }); }} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                              <Pencil size={14} />
+                            </button>
+                          )}
+                        </>
+                      )}
+                      {isEditing && isAdmin && (
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <select value={editFields.statut} onChange={(e) => setEditFields((p) => ({ ...p, statut: e.target.value as CollaborateurStatut }))} className="border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#4F7CFF] bg-white">
+                            {(['Actif', 'Absent'] as CollaborateurStatut[]).map((s) => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                          <select value={editFields.role} onChange={(e) => setEditFields((p) => ({ ...p, role: e.target.value as CollaborateurRole }))} className="border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#4F7CFF] bg-white">
+                            {(['Admin', 'Commercial', 'Assistant', 'Stagiaire'] as CollaborateurRole[]).map((r) => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                          <input type="text" value={editFields.mdpProv} onChange={(e) => setEditFields((p) => ({ ...p, mdpProv: e.target.value }))} placeholder="Nouveau MDP (optionnel)" className="border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#4F7CFF] font-mono w-40" />
+                          <button type="button" onClick={() => handleSaveCollab(c)} disabled={collabSaving} className="flex items-center gap-1 px-3 py-1 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 disabled:opacity-50">
+                            <Save size={12} /> {collabSaving ? '…' : 'Sauver'}
+                          </button>
+                          <button type="button" onClick={() => setEditingCollabId(null)} className="px-2 py-1 rounded-lg border border-slate-200 text-xs font-bold text-slate-500 hover:bg-slate-100">✕</button>
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* ── Apporteurs ─────────────────────────────────────────────────── */}
+      {adminSubTab === 'apporteurs' && (
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b border-slate-200 flex items-center gap-3">
+            <Building2 size={18} className="text-slate-400" />
+            <h3 className="text-base font-black text-slate-900 uppercase tracking-widest">Apporteurs</h3>
+            <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{apporteurs.length}</span>
+          </div>
+
+          {!isAdmin && (
+            <div className="px-6 py-3 bg-amber-50 border-b border-amber-100 text-xs font-bold text-amber-700">
+              Lecture seule — seul un Admin peut modifier les apporteurs.
+            </div>
+          )}
+
+          {apporteursLoading ? (
+            <div className="flex items-center gap-3 px-6 py-8 text-slate-400">
+              <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm">Chargement…</span>
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {apporteurs.map((a) => {
+                const isEditing = editingApporteurId === a.id;
+                const collabsAssignes = adminCollab.filter((c) => a.collaborateurIds.includes(c.id));
+                return (
+                  <li key={a.id} className="px-6 py-4">
+                    <div className="flex items-start gap-4 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleApporteur(a)}
+                        className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center text-sm font-black text-blue-600 shrink-0 hover:bg-blue-100 transition-colors"
+                      >
+                        {expandedApporteurId === a.id ? <ChevronUp size={16} /> : a.nom.slice(0, 1).toUpperCase()}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleApporteur(a)}
+                            className="text-sm font-bold text-slate-900 hover:text-blue-600 transition-colors text-left"
+                          >
+                            {a.nom}
+                          </button>
+                          {a.raisonSociale && a.raisonSociale !== a.nom && (
+                            <span className="text-xs text-slate-400">({a.raisonSociale})</span>
+                          )}
+                          {a.type && (
+                            <span className="text-[9px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase tracking-wide">{a.type}</span>
+                          )}
+                          <span className="text-[9px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded">
+                            {a.dossierIds.length} dossier{a.dossierIds.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-1 text-xs text-slate-400">
+                          {a.email && <span>{a.email}</span>}
+                          {a.telephone && <span>· {a.telephone}</span>}
+                          {a.commissionDefaut !== undefined && (
+                            <span>· Comm. {(a.commissionDefaut * 100).toFixed(0)}%</span>
+                          )}
+                          {a.cumulReverseApporteur != null && a.cumulReverseApporteur > 0 && (
+                            <span className="text-emerald-600 font-bold">· Versé : {a.cumulReverseApporteur.toFixed(2)} €</span>
+                          )}
+                          {a.totalEnAttente != null && a.totalEnAttente > 0 && (
+                            <span className="text-orange-500 font-bold">· En attente : {a.totalEnAttente.toFixed(2)} €</span>
+                          )}
+                        </div>
+                        {collabsAssignes.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mr-1">Suivi par</span>
+                            {collabsAssignes.map((c) => (
+                              <span key={c.id} className="text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.5 rounded">
+                                {c.nom}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {/* Encart dossiers — visible si expanded */}
+                        {expandedApporteurId === a.id && (
+                          <div className="mt-3 border border-slate-200 rounded-xl overflow-hidden">
+                            {apporteurDossiersLoading === a.id ? (
+                              <div className="flex items-center gap-2 px-4 py-3 text-slate-400 text-xs">
+                                <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                                Chargement des dossiers…
+                              </div>
+                            ) : (apporteurDossiers[a.id] || []).length === 0 ? (
+                              <div className="px-4 py-4 text-center">
+                                <p className="text-xs font-bold text-slate-300">Aucun dossier lié pour l'instant.</p>
+                                {a.lienAlex && (
+                                  <a href={a.lienAlex} target="_blank" rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 mt-2 text-[10px] font-bold text-blue-600 hover:underline">
+                                    <ExternalLink size={10} /> Lien formulaire Alex
+                                  </a>
+                                )}
+                              </div>
+                            ) : (
+                              <>
+                                <div className="grid grid-cols-4 px-4 py-2 bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                                  <span>Dossier</span><span>Statut</span><span>Prime</span><span>Commission</span>
+                                </div>
+                                <ul className="divide-y divide-slate-100">
+                                  {(apporteurDossiers[a.id] || []).map((d) => (
+                                    <li key={d.id} className="grid grid-cols-4 px-4 py-2.5 text-xs hover:bg-slate-50 transition-colors">
+                                      <button
+                                        type="button"
+                                        onClick={() => navigate(`/prospects/${d.id}`)}
+                                        className="font-mono font-bold text-blue-600 hover:underline text-left"
+                                      >
+                                        {d.idDossier}
+                                      </button>
+                                      <span className="text-slate-600 truncate">{d.statut}</span>
+                                      <span className="text-slate-700 font-medium tabular-nums">
+                                        {d.primeAnnuelle != null ? `${d.primeAnnuelle.toFixed(0)} €` : '—'}
+                                      </span>
+                                      <div className="flex flex-col">
+                                        {d.totalReverseApporteur != null && d.totalReverseApporteur > 0 && (
+                                          <span className="text-emerald-600 font-bold tabular-nums">{d.totalReverseApporteur.toFixed(2)} € versé</span>
+                                        )}
+                                        {d.commsEnAttente != null && d.commsEnAttente > 0 && (
+                                          <span className="text-orange-500 font-medium tabular-nums">{d.commsEnAttente.toFixed(2)} € att.</span>
+                                        )}
+                                        {(!d.totalReverseApporteur && !d.commsEnAttente) && (
+                                          <span className="text-slate-300">—</span>
+                                        )}
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                                <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex gap-6 text-[10px] font-bold">
+                                  {a.cumulReverseApporteur != null && (
+                                    <span className="text-emerald-600">Total versé : {a.cumulReverseApporteur.toFixed(2)} €</span>
+                                  )}
+                                  {a.totalEnAttente != null && (
+                                    <span className="text-orange-500">En attente : {a.totalEnAttente.toFixed(2)} €</span>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {!isEditing && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            a.statut === 'Actif' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                            a.statut === 'Suspendu' ? 'bg-red-50 text-red-700 border-red-100' :
+                            'bg-slate-50 text-slate-500 border-slate-100'
+                          }`}>
+                            {a.statut}
+                          </span>
+                          {a.activationFormulaire && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                              a.activationFormulaire === 'Actif' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                              a.activationFormulaire === 'Révoqué' ? 'bg-red-50 text-red-600 border-red-100' :
+                              'bg-slate-50 text-slate-400 border-slate-100'
+                            }`}>
+                              Form. {a.activationFormulaire}
+                            </span>
+                          )}
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingApporteurId(a.id);
+                                setEditApporteurFields({
+                                  statut: a.statut,
+                                  activationFormulaire: a.activationFormulaire || 'Inactif',
+                                  commissionDefaut: a.commissionDefaut !== undefined ? (a.commissionDefaut * 100).toFixed(0) : '',
+                                  collaborateurIds: [...a.collaborateurIds],
+                                  notes: a.notes || '',
+                                });
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {isEditing && isAdmin && (
+                        <div className="w-full mt-3 border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-3">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div>
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Statut</label>
+                              <select value={editApporteurFields.statut} onChange={(e) => setEditApporteurFields((p) => ({ ...p, statut: e.target.value as ApporteurStatut }))} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4F7CFF] bg-white">
+                                {(['Actif', 'Inactif', 'Suspendu'] as ApporteurStatut[]).map((s) => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Formulaire</label>
+                              <select value={editApporteurFields.activationFormulaire} onChange={(e) => setEditApporteurFields((p) => ({ ...p, activationFormulaire: e.target.value as ActivationFormulaire }))} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4F7CFF] bg-white">
+                                {(['Actif', 'Inactif', 'Révoqué'] as ActivationFormulaire[]).map((s) => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Commission %</label>
+                              <input type="number" min="0" max="100" step="0.5" value={editApporteurFields.commissionDefaut} onChange={(e) => setEditApporteurFields((p) => ({ ...p, commissionDefaut: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4F7CFF]" placeholder="Ex : 15" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Collaborateurs assignés</label>
+                            <div className="flex flex-wrap gap-2">
+                              {adminCollab.map((c) => {
+                                const checked = editApporteurFields.collaborateurIds.includes(c.id);
+                                return (
+                                  <button
+                                    key={c.id}
+                                    type="button"
+                                    onClick={() => setEditApporteurFields((p) => ({
+                                      ...p,
+                                      collaborateurIds: checked
+                                        ? p.collaborateurIds.filter((id) => id !== c.id)
+                                        : [...p.collaborateurIds, c.id],
+                                    }))}
+                                    className={`text-xs font-bold px-3 py-1 rounded-lg border transition-colors ${
+                                      checked ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+                                    }`}
+                                  >
+                                    {c.nom}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Notes</label>
+                            <input type="text" value={editApporteurFields.notes} onChange={(e) => setEditApporteurFields((p) => ({ ...p, notes: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[#4F7CFF]" placeholder="Remarques…" />
+                          </div>
+                          <div className="flex gap-3 justify-end pt-1">
+                            <button type="button" onClick={() => setEditingApporteurId(null)} className="px-4 py-1.5 rounded-lg border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-100">Annuler</button>
+                            <button type="button" onClick={() => handleSaveApporteur(a)} disabled={apporteurSaving} className="flex items-center gap-1.5 px-5 py-1.5 rounded-lg bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 disabled:opacity-50">
+                              <Save size={13} /> {apporteurSaving ? '…' : 'Sauvegarder'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Compagnies — placeholder V1 */}
+      {adminSubTab === 'collaborateurs' && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center">
+          <ShieldCheck size={32} className="text-slate-200 mx-auto mb-3" />
+          <p className="text-sm font-bold text-slate-400">Compagnies & Partenariats</p>
+          <p className="text-xs text-slate-300 mt-1">Prochainement</p>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <Layout>
       <div className="p-4 md:p-10 max-w-[1600px] mx-auto">
@@ -1204,10 +1935,12 @@ const Dashboard: React.FC = () => {
               <h1 className="text-2xl md:text-4xl font-black mb-2 text-slate-900 tracking-tighter">
                 {tab === 'overview' && "Pilotage Stratégique"}
                 {tab === 'prospects' && "Projets en cours"}
-                {tab === 'docs' && "Archives GED"}
-                {tab === 'settings' && "Paramètres"}
+                {tab === 'docs' && "Documents Cabinet"}
+                {(tab === 'settings' || tab === 'admin') && "Administration Cabinet"}
               </h1>
-              <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">OS métier • Jean-Marc Dupont</p>
+              <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">
+                OS métier • {currentCollaborateur?.nom ?? 'Cabinet ECA'}
+              </p>
             </div>
             {tab !== 'clients' && (
               <button onClick={() => navigate('/prospects/new')} className="w-full md:w-auto px-8 py-4 rounded-2xl bg-gradient-primary text-white font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-xl shadow-blue-500/20">
@@ -1220,12 +1953,8 @@ const Dashboard: React.FC = () => {
         {tab === 'overview' && renderOverview()}
         {tab === 'prospects' && renderProspectsList()}
         {tab === 'clients' && renderClientsList()}
-        {tab === 'docs' && (
-          <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center">
-            <h3 className="text-slate-400 font-bold">Archives GED (Supabase Table: documents)</h3>
-            <p className="text-slate-300 text-sm mt-2">Simulation de l'archivage sécurisé des pièces.</p>
-          </div>
-        )}
+        {tab === 'docs' && renderDocumentsCabinet()}
+        {(tab === 'settings' || tab === 'admin') && renderAdmin()}
       </div>
     </Layout>
   );

@@ -3,9 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, X } from 'lucide-react';
 import Logo from '../components/Logo';
 import { useStore } from '../store';
-
-const ADMIN_EMAIL = 'admin@alxor-os.fr';
-const ADMIN_PASSWORD = 'Alxor2026!';
+import { authenticateCollaborateur } from '../services/collaborateursAirtable';
 
 const inputFocusClass =
   'outline-none transition-all focus-visible:border-[#4F7CFF] focus-visible:ring-2 focus-visible:ring-[#4F7CFF]/25 focus-visible:ring-offset-0';
@@ -43,23 +41,24 @@ const LoginAdmin: React.FC = () => {
     return `/prospects/${redirectParam}`;
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
     setIsLoading(true);
 
-    const isValid =
-      email.trim().toLowerCase() === ADMIN_EMAIL &&
-      password === ADMIN_PASSWORD;
-
-    if (!isValid) {
+    try {
+      const collab = await authenticateCollaborateur(email, password);
+      if (!collab) {
+        setError('Identifiants invalides ou compte inactif.');
+        setIsLoading(false);
+        return;
+      }
+      login(collab);
+      navigate(getRedirectTarget());
+    } catch {
+      setError('Erreur de connexion. Vérifiez votre réseau et réessayez.');
       setIsLoading(false);
-      setError('Identifiants administrateur invalides.');
-      return;
     }
-
-    login();
-    navigate(getRedirectTarget());
   };
 
   return (

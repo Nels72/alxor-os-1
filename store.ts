@@ -41,7 +41,7 @@ interface AppState {
   reclamations: Reclamation[];
   addReclamation: (r: Omit<Reclamation, 'id' | 'created_at'>) => void;
   updateReclamation: (id: string, updates: Partial<Reclamation>) => void;
-  login: () => void;
+  login: (collab?: Collaborateur) => void;
   logout: () => void;
   addProspect: (prospect: Prospect) => void;
   updateProspect: (id: string, updates: Partial<Prospect>) => void;
@@ -112,7 +112,24 @@ export const useStore = create<AppState>((set, get) => ({
     contracts: state.contracts.map((c) => (c.id === contratId ? { ...c, ...updates } : c))
   })),
 
-  login: () => set({ isAuthenticated: true, user: mockUser }),
+  login: (collab?: Collaborateur) => {
+    if (collab) {
+      const [prenom, ...rest] = collab.nom.split(' ');
+      const userFromCollab: User = {
+        ...mockUser,
+        id: collab.id,
+        first_name: collab.prenom || prenom || collab.nom,
+        last_name: collab.nomFamille || rest.join(' ') || '',
+        email: collab.email || mockUser.email,
+      };
+      try {
+        localStorage.setItem('alxor_current_collaborateur', JSON.stringify(collab));
+      } catch { /* navigation privée */ }
+      set({ isAuthenticated: true, user: userFromCollab, currentCollaborateur: collab });
+    } else {
+      set({ isAuthenticated: true, user: mockUser });
+    }
+  },
   logout: () => set({ isAuthenticated: false, user: null }),
 
   currentCollaborateur: loadStoredCollaborateur(),
