@@ -165,7 +165,12 @@ const FicheTarification: React.FC<FicheTarificationProps> = ({ prospect, suggest
   const offreSelectionnee: BlockData[] = [
     { label: 'Compagnie', value: suggestion.compagnie },
     { label: 'Score Matching', value: `${suggestion.score}%` },
-    { label: 'Prime Estimée', value: `${suggestion.tarif_estime}€ TTC/an` },
+    {
+      label: 'Prime',
+      value: suggestion.tarif_estime != null
+        ? `${suggestion.tarif_estime}€ TTC/an`
+        : 'À déterminer — devis à demander sur l\'extranet',
+    },
     { label: 'Franchise', value: suggestion.franchise },
     { label: 'Garanties', value: suggestion.garanties },
   ];

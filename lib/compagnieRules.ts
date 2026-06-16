@@ -2,7 +2,12 @@
  * Base de connaissance compagnies — famille Véhicule (Auto / Moto).
  * Critères d'éligibilité (gate binaire) + scoring marché.
  *
- * À enrichir avec les vraies règles d'appétence Easy Courtage.
+ * ⚠️ Filet de secours STATIQUE uniquement — utilisé par le store quand
+ * Airtable (`Produits_CIE`) est inaccessible ou ne contient pas encore de
+ * données réelles exploitables. La source de vérité est Airtable
+ * (`services/produitsAirtable.ts`) : toute compagnie/produit ajouté ou
+ * complété côté Airtable apparaît instantanément dans le front, sans
+ * modification de ce fichier.
  */
 
 export interface VehiculeEligibiliteCriteria {
@@ -44,145 +49,100 @@ export interface CompagnieVehiculeRule {
   /** Bonus de score (%) si bonus_malus du client ≤ 0.50 */
   bonus_score_excellent?: number;
   /**
-   * Base de prime annuelle estimée TTC (profil moyen, bonus 1.0, 0 sinistre).
-   * Sera modulée par le scoring d'appétence.
+   * Base de prime annuelle estimée TTC — réservé à un futur usage de
+   * tarification réelle. NON utilisé par le moteur de matching actuel
+   * (doctrine 2026-06-16 : le matching ne tarife pas).
    */
   prime_base: number;
+  /**
+   * Fourchette de franchise réelle (€), extraite des fiches produits/DG —
+   * absente tant qu'aucune donnée réelle n'a été extraite (jamais de valeur
+   * inventée). Alimentée depuis Airtable `Produits_CIE` (`Franchise_Min_EUR`/
+   * `Franchise_Max_EUR`) ; volontairement absente ici (filet de secours).
+   */
+  franchise_min?: number;
+  franchise_max?: number;
 }
 
 // ─── Compagnies véhicule partenaires Easy Courtage ──────────────────────────
+//
+// Les 4 compagnies réellement partenaires (cf. Airtable `Compagnies_et_Partenariats`,
+// vérifié 2026-06-16). Les critères d'éligibilité et le scoring marché ci-dessous
+// sont des valeurs NEUTRES provisoires (permissives par défaut, bénéfice du doute) :
+// tant que le métier n'a pas saisi de vrais critères dans `Produits_CIE`, ce filet
+// de secours ne doit pas prétendre à une expertise qu'il n'a pas.
 
 export const COMPAGNIES_VEHICULE: CompagnieVehiculeRule[] = [
   {
-    compagnie: 'ALLIANZ',
-    extranet_url: 'https://www.allianz.fr/espace-pro',
+    compagnie: 'ALLIANZ FRANCE',
+    extranet_url: 'https://sdw-alex-courtage.allianz.fr/',
     eligible: {
       bonus_max: 1.50,
       sinistres_max: 2,
       accepte_resilie: false,
-      anciennete_permis_min_mois: 12,
     },
     scoring: {
-      rapport_qualite_prix: 78,
-      gestion_sinistres: 90,
-      etendue_garanties: 88,
-      reactivite: 82,
-    },
-    formules_disponibles: ['RC', 'Tiers Étendu', 'Tous Risques'],
-    bonus_score_excellent: 8,
-    prime_base: 820,
-  },
-  {
-    compagnie: 'AXA',
-    extranet_url: 'https://www.axa.fr/pro/espace-courtier',
-    eligible: {
-      bonus_max: 2.00,
-      sinistres_max: 3,
-      accepte_resilie: false,
-      anciennete_permis_min_mois: 0,
-    },
-    scoring: {
-      rapport_qualite_prix: 72,
-      gestion_sinistres: 85,
-      etendue_garanties: 82,
-      reactivite: 88,
+      rapport_qualite_prix: 70,
+      gestion_sinistres: 70,
+      etendue_garanties: 70,
+      reactivite: 70,
     },
     formules_disponibles: ['RC', 'Tiers Étendu', 'Tous Risques'],
     prime_base: 900,
   },
   {
-    compagnie: 'THELEM',
-    extranet_url: 'https://www.thelem-assurances.fr/espace-courtier',
-    eligible: {
-      bonus_max: 1.75,
-      sinistres_max: 2,
-      accepte_resilie: false,
-      anciennete_permis_min_mois: 6,
-    },
-    scoring: {
-      rapport_qualite_prix: 88,
-      gestion_sinistres: 76,
-      etendue_garanties: 72,
-      reactivite: 74,
-    },
-    formules_disponibles: ['RC', 'Tiers Étendu', 'Tous Risques'],
-    bonus_score_excellent: 5,
-    prime_base: 750,
-  },
-  {
-    compagnie: 'GROUPAMA',
-    extranet_url: 'https://www.groupama.fr/pro/espace-courtier',
-    eligible: {
-      bonus_max: 2.50,
-      sinistres_max: 3,
-      accepte_resilie: true,
-      motifs_resilie_exclus: ['non-paiement', 'fraude'],
-      anciennete_permis_min_mois: 0,
-    },
-    scoring: {
-      rapport_qualite_prix: 75,
-      gestion_sinistres: 80,
-      etendue_garanties: 78,
-      reactivite: 72,
-    },
-    formules_disponibles: ['RC', 'Tiers Étendu', 'Tous Risques'],
-    prime_base: 870,
-  },
-  {
-    compagnie: 'MAIF',
-    extranet_url: 'https://www.maif.fr/espace-courtier',
-    eligible: {
-      bonus_max: 1.25,
-      sinistres_max: 1,
-      accepte_resilie: false,
-      anciennete_permis_min_mois: 24,
-    },
-    scoring: {
-      rapport_qualite_prix: 82,
-      gestion_sinistres: 96,
-      etendue_garanties: 80,
-      reactivite: 78,
-    },
-    formules_disponibles: ['Tiers Étendu', 'Tous Risques'],
-    bonus_score_excellent: 12,
-    prime_base: 780,
-  },
-  {
-    compagnie: 'COVEA (MMA)',
-    extranet_url: 'https://www.mma.fr/espace-pro',
-    eligible: {
-      bonus_max: 3.50,
-      sinistres_max: 4,
-      accepte_resilie: true,
-      anciennete_permis_min_mois: 0,
-    },
-    scoring: {
-      rapport_qualite_prix: 65,
-      gestion_sinistres: 72,
-      etendue_garanties: 68,
-      reactivite: 66,
-    },
-    formules_disponibles: ['RC', 'Tiers Étendu', 'Tous Risques'],
-    prime_base: 1050,
-  },
-  {
-    compagnie: 'APRIL Moto',
-    extranet_url: 'https://www.april-moto.com/espace-courtier',
+    compagnie: 'AXA FRANCE IARD',
+    extranet_url: 'https://inaxa.axa-courtage.fr/Pages/Accueil.aspx',
     eligible: {
       bonus_max: 1.50,
       sinistres_max: 2,
       accepte_resilie: false,
-      anciennete_permis_min_mois: 12,
     },
     scoring: {
-      rapport_qualite_prix: 85,
-      gestion_sinistres: 78,
-      etendue_garanties: 76,
-      reactivite: 80,
+      rapport_qualite_prix: 70,
+      gestion_sinistres: 70,
+      etendue_garanties: 70,
+      reactivite: 70,
     },
     formules_disponibles: ['RC', 'Tiers Étendu', 'Tous Risques'],
-    bonus_score_excellent: 6,
-    prime_base: 760,
+    prime_base: 900,
+  },
+  {
+    compagnie: 'THELEM ASSURANCES',
+    extranet_url: 'https://portail-courtage.thelem-assurances.fr/portail-courtage/accueil.action',
+    eligible: {
+      bonus_max: 1.50,
+      sinistres_max: 2,
+      accepte_resilie: false,
+    },
+    scoring: {
+      rapport_qualite_prix: 70,
+      gestion_sinistres: 70,
+      etendue_garanties: 70,
+      reactivite: 70,
+    },
+    formules_disponibles: ['RC', 'Tiers Étendu', 'Tous Risques'],
+    prime_base: 900,
+  },
+  {
+    compagnie: 'MAXANCE',
+    // ⚠️ Typo « hhtps:// » présente telle quelle dans Airtable
+    // (Compagnies_et_Partenariats, URL_Extranet) — corrigée ici pour que le
+    // lien fonctionne ; à corriger aussi côté Airtable.
+    extranet_url: 'https://extranet.maxance.com',
+    eligible: {
+      bonus_max: 1.50,
+      sinistres_max: 2,
+      accepte_resilie: false,
+    },
+    scoring: {
+      rapport_qualite_prix: 70,
+      gestion_sinistres: 70,
+      etendue_garanties: 70,
+      reactivite: 70,
+    },
+    formules_disponibles: ['RC', 'Tiers Étendu', 'Tous Risques'],
+    prime_base: 900,
   },
 ];
 

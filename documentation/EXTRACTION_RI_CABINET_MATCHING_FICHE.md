@@ -1,7 +1,9 @@
 # Extraction RI Cabinet · Matching IA · Fiche Tarification (Auto/Moto)
 
 > Documentation technique — parcours Cabinet (face à face courtier).
-> Dernière mise à jour : 2026-06-02.
+> Dernière mise à jour : 2026-06-16.
+
+> ⚠️ **Doctrine matching (2026-06-16)** : il n'existe pas de fiche d'appétence dédiée chez les compagnies partenaires, seulement des **fiches produits** (segment cible, formules, garanties — pas de seuils de souscription chiffrés). Le moteur (`lib/matchingEngine.ts`) rapproche donc le **profil du prospect** (données RI) de la fiche produit + de seuils saisis manuellement par le métier dans `Produits_CIE`. Il ne calcule **aucune tarification** : il livre uniquement le **Top 3 des compagnies susceptibles d'accepter le risque**. Le tarif réel n'apparaît que plus tard, via l'extraction du devis effectivement émis (`services/devisExtraction.ts`).
 
 ## 1. Vue d'ensemble du parcours
 
@@ -52,12 +54,12 @@ Fiche Tarification (FicheTarification) → recopie extranet compagnie
 ## 4. Données tarifantes & matching
 
 - `lib/prospectProductData.ts` : type `AutoProductData` (discriminé `type: 'vehicule'`) + `hydrateAutoProductData()` + helpers `calcAge`, `calcAnciennetePermis`, `isVehiculeProduct`, `VEHICULE_CODES`.
-- `lib/compagnieRules.ts` : base de connaissance 7 compagnies véhicule (éligibilité + scoring marché).
-- `lib/matchingEngine.ts` : `runVehiculeMatching(prospect)` — 3 phases (éligibilité → appétence → composite), top 3, estimation prime. Branché dans `store.ts` (`runIAAnalysis`) pour les produits AUT/MOT.
+- `lib/compagnieRules.ts` : base de connaissance 7 compagnies véhicule (éligibilité saisie manuellement + scoring marché extrait des fiches produits).
+- `lib/matchingEngine.ts` : `runVehiculeMatching(prospect)` — 3 phases (éligibilité → appétence → composite), Top 3 **sans tarification** (`tarif_estime` optionnel, non calculé). Branché dans `store.ts` (`runIAAnalysis`) pour les produits AUT/MOT.
 
 ## 5. Fiche Tarification
 
-`components/FicheTarification.tsx` — blocs : Souscripteur (âge), Véhicule & Permis (immat, marque, modèle, usage, énergie, ancienneté permis), **Antécédents** (compagnie, **date d'effet**, **mois d'assurance** = `nb_mois`, bonus/malus, nb sinistres, coeff nb mois, résilié), **Détail des sinistres** (date / responsabilité / nature), Formule souhaitée, Offre sélectionnée. Liens extranet dynamiques depuis `compagnieRules`. « Copier tout » + « Imprimer ».
+`components/FicheTarification.tsx` — blocs : Souscripteur (âge), Véhicule & Permis (immat, marque, modèle, usage, énergie, ancienneté permis), **Antécédents** (compagnie, **date d'effet**, **mois d'assurance** = `nb_mois`, bonus/malus, nb sinistres, coeff nb mois, résilié), **Détail des sinistres** (date / responsabilité / nature), Formule souhaitée, Offre sélectionnée (compagnie + score matching ; pas de tarif tant que le devis réel n'est pas extrait). Liens extranet dynamiques depuis `compagnieRules`. « Copier tout » + « Imprimer ».
 
 ## 6. Historique des correctifs (session 2026-06-02)
 
@@ -76,6 +78,18 @@ Fiche Tarification (FicheTarification) → recopie extranet compagnie
 - **RI conditionnel** : toggle « Conducteur sans antécédents (non assuré 36 mois) » (`product_data.sans_antecedents`) → RI exclu des bloquants Phase 1 (logique chatbot Alex étape 10) + carte extraction masquée ; bouton d'upload manuel du RI retiré (carte = statut seul, extraction auto au chargement du doc).
 - Fiche : ligne « Date d'échéance » (RI `bonus_malus.date_echeance`, renvoyée par n8n comme `date_echeance`/`bm_date_echeance`).
 - Provisoire : délai d'échéance par défaut via `DocumentConfig.delai_provisoire_jours` (Carte Grise = 30 j, règle relance n8n ; autres = 90 j).
+
+## 6ter. Doctrine matching révisée (session 2026-06-16)
+
+- Constat métier : il n'existe pas de fiche d'appétence dédiée chez les compagnies partenaires — seulement des fiches produits (segment cible, formules, garanties). Les seuils d'éligibilité (bonus/malus max, sinistres max...) restent une **saisie manuelle du métier** dans `Produits_CIE`, jamais une extraction automatique.
+- Le moteur de matching ne doit produire **aucune estimation de tarif** — uniquement le rapprochement profil/segment + Top 3 des compagnies susceptibles d'accepter le risque. `estimatePrime()` retiré de `lib/matchingEngine.ts` ; `AISuggestion.tarif_estime` passé optionnel.
+- Les champs DDA `Prime_Estimee` (Airtable, traçabilité ACPR) restent vides au moment du matching ; ils seront alimentés plus tard avec le tarif réel issu de l'extraction du devis.
+
+## 6quater. Compagnies réelles + fourchette de franchise (session 2026-06-16)
+
+- `lib/compagnieRules.ts` ne contient plus que les 4 vrais partenaires (ALLIANZ FRANCE, THELEM ASSURANCES, AXA FRANCE IARD, MAXANCE) — uniquement comme filet de secours statique, avec des critères neutres (pas de fausse expertise tant que le métier n'a pas saisi de vrais seuils dans Airtable).
+- `services/produitsAirtable.ts` charge instantanément toute ligne `Produits_CIE` réellement liée à une compagnie, même partielle (plus de seuil arbitraire avant utilisation des données réelles).
+- `lib/matchingEngine.ts` : la franchise affichée est une vraie fourchette (`Franchise_Min_EUR`–`Franchise_Max_EUR`, calculée par le workflow n8n à partir du DG/CG) ou, si absente, un message explicite — jamais un montant inventé.
 
 ## 7. À faire (prochaines itérations)
 

@@ -290,7 +290,7 @@ export function buildFicData(
   const souscripteur: FicSouscripteur = {
     nom: prospect.nom || '',
     prenom: prospect.prenom || '',
-    dateNaissance: dossier.Date_Naissance as string || '',
+    dateNaissance: prospect.date_naissance || '',
     adresse: prospect.adresse || '',
     telephone: prospect.telephone || '',
     email: prospect.email || '',

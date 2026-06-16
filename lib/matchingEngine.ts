@@ -2,6 +2,13 @@
  * Moteur de matching véhicule (Auto / Moto).
  * Scoring local en 3 phases : éligibilité → appétence → composite.
  * Produit des AISuggestion[] compatibles avec le format existant du store.
+ *
+ * Doctrine (2026-06-16) : il n'existe pas de fiche d'appétence dédiée chez les
+ * compagnies partenaires (seulement des fiches produits — segment cible, formules,
+ * garanties). Le moteur rapproche le profil du prospect des seuils saisis
+ * manuellement par le métier (`Produits_CIE`) et NE PRODUIT AUCUNE TARIFICATION :
+ * il livre uniquement le Top 3 des compagnies susceptibles d'accepter le risque.
+ * Le tarif réel n'arrive que plus tard, via l'extraction du devis effectivement émis.
  */
 
 import type { AISuggestion } from '../types';
@@ -23,11 +30,6 @@ const PENALITE_PAR_SINISTRE      = 8;   // points perdus par sinistre déclaré
 const BONUS_ANCIENNETE_MAX       = 10;  // max +10 pts pour 20 ans de permis
 const PENALITE_JEUNE_CONDUCTEUR  = 15;  // -15 pts si conducteur < 25 ans
 const SEUIL_JEUNE_CONDUCTEUR     = 25;
-
-// ─── Base de prime d'estimation ─────────────────────────────────────────────
-const PRIME_MULTIPLICATEUR_MALUS     = 180;  // € par tranche de 0.25 de malus
-const PRIME_MULTIPLICATEUR_SINISTRE  = 60;   // € par sinistre
-const PRIME_REDUCTION_ANCIENNETE     = 0.02; // 2% de réduction par 12 mois d'ancienneté
 
 function clamp(val: number, min: number, max: number): number {
   return Math.min(Math.max(val, min), max);
@@ -182,32 +184,32 @@ function calcComposite(
   );
 }
 
-// ─── Estimation prime ────────────────────────────────────────────────────────
+// ─── Fourchette de franchise ──────────────────────────────────────────────────
+//
+// Issue des fiches produits/DG réelles (`Produits_CIE.Franchise_Min_EUR/Max_EUR`,
+// cf. services/produitsAirtable.ts). Jamais de valeur inventée : si la donnée n'a
+// pas encore été extraite pour cette compagnie, on le dit explicitement plutôt que
+// d'afficher un montant arbitraire.
 
-function estimatePrime(
+function buildFranchiseLabel(
   rule: CompagnieVehiculeRule,
   data: AutoProductData
-): number {
-  let prime = rule.prime_base;
+): string {
+  const formule = data.formule_souhaitee || 'Tous Risques';
 
-  // Surcoût bonus/malus
-  if (data.bonus_malus !== undefined && data.bonus_malus > 1.0) {
-    const tranches = Math.ceil((data.bonus_malus - 1.0) / 0.25);
-    prime += tranches * PRIME_MULTIPLICATEUR_MALUS;
+  // RC seule : pas de garantie dommages → pas de franchise matérielle (fait
+  // structurel, pas une estimation marché).
+  if (formule === 'RC' && rule.formules_disponibles.includes('RC')) {
+    return '0€ (RC seule)';
   }
 
-  // Surcoût sinistres
-  if (data.nb_sinistres_36m !== undefined && data.nb_sinistres_36m > 0) {
-    prime += data.nb_sinistres_36m * PRIME_MULTIPLICATEUR_SINISTRE;
+  if (rule.franchise_min !== undefined && rule.franchise_max !== undefined) {
+    return rule.franchise_min === rule.franchise_max
+      ? `${rule.franchise_min}€`
+      : `${rule.franchise_min}€ – ${rule.franchise_max}€`;
   }
 
-  // Réduction ancienneté (max 40% = 20 ans)
-  if (data.anciennete_permis_mois !== undefined) {
-    const reductionAns = Math.min(data.anciennete_permis_mois / 12, 20);
-    prime = prime * (1 - reductionAns * PRIME_REDUCTION_ANCIENNETE);
-  }
-
-  return Math.round(prime / 10) * 10; // arrondi à 10€
+  return 'Franchise — à confirmer sur l\'extranet';
 }
 
 // ─── Génération justifications ────────────────────────────────────────────────
@@ -230,7 +232,7 @@ function buildJustifications(
     justifs.push('Reconnu pour la qualité de gestion sinistre');
   }
   if (data.bonus_malus !== undefined && data.bonus_malus <= 0.80) {
-    justifs.push(`Bonus ${data.bonus_malus.toFixed(2)} — tarif optimisé`);
+    justifs.push(`Bonus ${data.bonus_malus.toFixed(2)} — profil très favorable`);
   }
   if (data.anciennete_permis_mois !== undefined && data.anciennete_permis_mois >= 120) {
     justifs.push(`${Math.floor(data.anciennete_permis_mois / 12)} ans de permis — profil stable`);
@@ -244,7 +246,7 @@ function buildJustifications(
     justifs.push('Compagnie active sur votre profil produit');
     justifs.push('Conditions générales adaptées à ce type de véhicule');
   } else if (justifs.length === 1) {
-    justifs.push('Tarif dans la moyenne du marché sur ce segment');
+    justifs.push('Positionnement marché correct sur ce segment');
   }
 
   return justifs.slice(0, 3); // max 3
@@ -292,22 +294,16 @@ export function runVehiculeMatching(
     eligibles.push(fallback);
   }
 
-  // Phases 2 + 3 : Scoring
+  // Phases 2 + 3 : Scoring (rapprochement profil ↔ compagnie — pas de tarification)
   const scored = eligibles.map((rule) => {
     const appetence = calcAppetence(rule, data, ageConducteur);
     const composite = calcComposite(rule, appetence);
-    const prime = estimatePrime(rule, data);
     const justifications = buildJustifications(rule, data, composite, appetence);
 
     return {
       compagnie: rule.compagnie,
       score: composite,
-      tarif_estime: prime,
-      franchise: rule.formules_disponibles.includes(
-        data.formule_souhaitee || 'Tous Risques'
-      )
-        ? data.formule_souhaitee === 'RC' ? '0€ (RC seule)' : '300€'
-        : '350€',
+      franchise: buildFranchiseLabel(rule, data),
       garanties: rule.formules_disponibles.join(', '),
       justification: justifications,
       appetence_technique: appetence,

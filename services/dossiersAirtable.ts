@@ -192,6 +192,8 @@ function extractContactIdentity(cf: Record<string, unknown>): {
   prenom: string;
   email: string;
   telephone: string;
+  adresse: string;
+  date_naissance: string;
 } {
   const prenom =
     typeof cf['Prénom'] === 'string' ? cf['Prénom'].trim() : '';
@@ -205,6 +207,9 @@ function extractContactIdentity(cf: Record<string, unknown>): {
       : typeof cf['Telephone'] === 'string'
         ? cf['Telephone'].trim()
         : '';
+  const adresse = typeof cf['Adresse'] === 'string' ? cf['Adresse'].trim() : '';
+  const date_naissance =
+    typeof cf['Date_Naissance'] === 'string' ? cf['Date_Naissance'].trim() : '';
   const full =
     typeof cf['Nom complet'] === 'string' ? cf['Nom complet'].trim() : '';
   if (!prenom && !nom && full) {
@@ -214,6 +219,8 @@ function extractContactIdentity(cf: Record<string, unknown>): {
       nom: parts.slice(1).join(' ') || ' ',
       email,
       telephone: tel || '—',
+      adresse,
+      date_naissance,
     };
   }
   return {
@@ -221,6 +228,8 @@ function extractContactIdentity(cf: Record<string, unknown>): {
     nom: nom || ' ',
     email,
     telephone: tel || '—',
+    adresse,
+    date_naissance,
   };
 }
 
@@ -305,6 +314,8 @@ export async function mapDossierToProspect(
   let prenom = 'Client';
   let email = '';
   let telephone = '—';
+  let adresse = '';
+  let date_naissance = '';
 
   if (contactIds.length > 0) {
     const contact = await fetchContactCached(contactIds[0]);
@@ -314,6 +325,8 @@ export async function mapDossierToProspect(
       prenom = id.prenom;
       email = id.email;
       telephone = id.telephone;
+      adresse = id.adresse;
+      date_naissance = id.date_naissance;
     }
   }
 
@@ -391,6 +404,8 @@ export async function mapDossierToProspect(
     prenom: prenom.trim() || 'Client',
     email: email || '—',
     telephone,
+    adresse: adresse || undefined,
+    date_naissance: date_naissance || undefined,
     type_contrat_demande: typeLabel,
     statut: mapStatutToProspect(statutRaw),
     ges_score: hasAllPhase1Auto ? Math.max(ges, 60) : ges,

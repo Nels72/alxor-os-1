@@ -1164,8 +1164,10 @@ const ProspectDetail: React.FC = () => {
                                     </span>
                                   )}
                                 </div>
-                                <p className="text-3xl font-black text-[#4F7CFF] mb-6">{sugg.tarif_estime}€ <span className="text-[12px] text-slate-400 font-bold uppercase tracking-widest">TTC / an</span></p>
-                                
+                                <p className="text-sm font-black text-[#4F7CFF] mb-6 flex items-center gap-2">
+                                  <Handshake size={18} className="shrink-0" /> Compagnie susceptible d&apos;accepter ce profil
+                                </p>
+
                                 <div className="space-y-3 mb-6 p-4 bg-slate-50/50 rounded-2xl border border-slate-50">
                                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-2">
                                     <Brain size={12} /> Analyse des bénéfices

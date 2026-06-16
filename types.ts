@@ -98,7 +98,8 @@ export interface Avenant {
 export interface AISuggestion {
   compagnie: string;
   score: number;
-  tarif_estime: number;
+  /** Optionnel : le moteur de matching ne tarife pas — renseigné seulement une fois le devis réel extrait */
+  tarif_estime?: number;
   justification: string[];
   franchise?: string;
   garanties?: string;
