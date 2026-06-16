@@ -22,11 +22,15 @@ export async function saveDDAPropositions(
   };
 
   // Proposition 1 (meilleur score)
+  // Note : Prime_Estimee reste vide tant qu'aucun devis réel n'a été extrait —
+  // le moteur de matching ne tarife pas (cf. doctrine 2026-06-16).
   if (sorted[0]) {
     fields.DDA_Proposition_1_Compagnie = sorted[0].compagnie;
     fields.DDA_Proposition_1_Score = sorted[0].score;
     fields.DDA_Proposition_1_Justification = sorted[0].justification.join('\n');
-    fields.DDA_Proposition_1_Prime_Estimee = sorted[0].tarif_estime;
+    if (sorted[0].tarif_estime !== undefined) {
+      fields.DDA_Proposition_1_Prime_Estimee = sorted[0].tarif_estime;
+    }
   }
 
   // Proposition 2
@@ -34,7 +38,9 @@ export async function saveDDAPropositions(
     fields.DDA_Proposition_2_Compagnie = sorted[1].compagnie;
     fields.DDA_Proposition_2_Score = sorted[1].score;
     fields.DDA_Proposition_2_Justification = sorted[1].justification.join('\n');
-    fields.DDA_Proposition_2_Prime_Estimee = sorted[1].tarif_estime;
+    if (sorted[1].tarif_estime !== undefined) {
+      fields.DDA_Proposition_2_Prime_Estimee = sorted[1].tarif_estime;
+    }
   }
 
   // Proposition 3
@@ -42,7 +48,9 @@ export async function saveDDAPropositions(
     fields.DDA_Proposition_3_Compagnie = sorted[2].compagnie;
     fields.DDA_Proposition_3_Score = sorted[2].score;
     fields.DDA_Proposition_3_Justification = sorted[2].justification.join('\n');
-    fields.DDA_Proposition_3_Prime_Estimee = sorted[2].tarif_estime;
+    if (sorted[2].tarif_estime !== undefined) {
+      fields.DDA_Proposition_3_Prime_Estimee = sorted[2].tarif_estime;
+    }
   }
 
   // Compagnie retenue + motif (si déjà choisi)

@@ -15,6 +15,9 @@ export interface UploadDocumentInput {
   dossierId: string;
   workflowDocType: string;
   label: string;
+  /** Requis pour archiver réellement le fichier sur Dropbox (chemin /ged_alxor/{Cabinet}/{Contact}/{Dossier}/) */
+  contactId?: string;
+  idDossier?: string;
 }
 
 export interface QualifyDocumentInput {
@@ -48,7 +51,7 @@ export async function uploadDocumentCabinet(input: UploadDocumentInput): Promise
     Date_Upload: new Date().toISOString().split('T')[0],
   });
 
-  if (N8N_BASE && UPLOAD_PATH) {
+  if (N8N_BASE && UPLOAD_PATH && input.contactId && input.idDossier) {
     try {
       const base64 = await fileToBase64(input.file);
       await fetch(`${N8N_BASE}${UPLOAD_PATH}`, {
@@ -57,6 +60,8 @@ export async function uploadDocumentCabinet(input: UploadDocumentInput): Promise
         body: JSON.stringify({
           document_id: doc.id,
           dossier_id: input.dossierId,
+          contact_id: input.contactId,
+          id_dossier: input.idDossier,
           file_name: input.file.name,
           file_base64: base64,
           file_type: input.file.type,
@@ -91,12 +96,19 @@ export async function fetchDocumentsForDossier(dossierId: string): Promise<Airta
 /**
  * Upload un PDF FIC (Blob) vers Airtable + Dropbox.
  * Même pattern que uploadDocumentCabinet mais accepte un Blob au lieu d'un File.
+ *
+ * contactId/idDossier sont requis pour construire le chemin Dropbox
+ * (/ged_alxor/{Cabinet}/{Contact}/{Dossier}/...) côté workflow n8n
+ * "Upload Document Cabinet" — sans eux, le PDF n'est jamais archivé sur Dropbox
+ * (le Document Airtable est créé, mais Dropbox_Path reste vide).
  */
 export async function uploadFicPdf(
   dossierId: string,
   pdfBlob: Blob,
   ficType: string,
   prospectNom: string,
+  contactId?: string,
+  idDossier?: string,
 ): Promise<AirtableDocument> {
   const timestamp = new Date().toISOString().split('T')[0];
   const fileName = `FIC_${ficType.toUpperCase()}_${prospectNom}_${timestamp}.pdf`;
@@ -110,7 +122,7 @@ export async function uploadFicPdf(
     Date_Upload: timestamp,
   });
 
-  if (N8N_BASE && UPLOAD_PATH) {
+  if (N8N_BASE && UPLOAD_PATH && contactId && idDossier) {
     try {
       const base64 = await blobToBase64(pdfBlob);
       await fetch(`${N8N_BASE}${UPLOAD_PATH}`, {
@@ -119,6 +131,8 @@ export async function uploadFicPdf(
         body: JSON.stringify({
           document_id: doc.id,
           dossier_id: dossierId,
+          contact_id: contactId,
+          id_dossier: idDossier,
           file_name: fileName,
           file_base64: base64,
           file_type: 'application/pdf',

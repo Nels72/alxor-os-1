@@ -420,8 +420,13 @@ const styles: Record<string, object> = {
 
 /**
  * Génère un Blob PDF de la FIC à partir des données structurées.
+ *
+ * ⚠️ pdfmake ≥ 0.3.0 : toutes les méthodes (`getBlob`, `getBuffer`, `download`...)
+ * retournent une Promise — il n'y a plus de callback (breaking change du changelog
+ * pdfmake). `getBlob((blob) => ...)` ne déclenche plus jamais le callback, d'où un
+ * blocage infini du bouton "Générer & Archiver" (corrigé 2026-06-16).
  */
-export function generateFicPdf(data: FicData): Promise<Blob> {
+export async function generateFicPdf(data: FicData): Promise<Blob> {
   const content: object[] = [
     ...buildHeader(data),
     ...buildPresentationECA(),
@@ -448,14 +453,8 @@ export function generateFicPdf(data: FicData): Promise<Blob> {
     }),
   };
 
-  return new Promise((resolve, reject) => {
-    try {
-      const pdfDoc = pdfMake.createPdf(docDefinition as any);
-      pdfDoc.getBlob((blob: Blob) => resolve(blob));
-    } catch (err) {
-      reject(err);
-    }
-  });
+  const pdfDoc = pdfMake.createPdf(docDefinition as any);
+  return await pdfDoc.getBlob();
 }
 
 /**
@@ -486,7 +485,7 @@ export async function downloadFicPdf(data: FicData): Promise<void> {
       margin: [0, 10, 0, 0],
     }),
   } as any);
-  pdfDoc.download(filename);
+  await pdfDoc.download(filename);
 }
 
 // ============================

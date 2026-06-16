@@ -1,6 +1,12 @@
 /**
  * Charge les règles de matching véhicule depuis la table Produits_CIE d'Airtable.
- * Retourne null si les champs d'éligibilité ne sont pas encore présents → fallback côté appelant.
+ * Retourne null seulement si la requête échoue ou si aucune ligne n'est liée à une
+ * compagnie réelle → fallback côté appelant (`lib/compagnieRules.ts`).
+ *
+ * Doctrine "chargement instantané" (2026-06-16) : toute ligne réellement liée à une
+ * compagnie est chargée dès qu'elle existe, même partiellement remplie — chaque champ
+ * absent reçoit un défaut permissif (bénéfice du doute), plutôt que d'attendre que
+ * *toutes* les compagnies aient des critères complets avant d'afficher quoi que ce soit.
  */
 
 import type { CompagnieVehiculeRule } from '../lib/compagnieRules';
@@ -64,16 +70,13 @@ export async function fetchVehiculeRules(): Promise<CompagnieVehiculeRule[] | nu
       `&fields[]=Energies_Exclues` +
       `&fields[]=Score_QualitePrix&fields[]=Score_GestionSinistres` +
       `&fields[]=Score_EtendueGaranties&fields[]=Score_Reactivite` +
-      `&fields[]=Prime_Base_EUR&fields[]=Formules_Disponibles&fields[]=Bonus_Score_Excellent`
+      `&fields[]=Prime_Base_EUR&fields[]=Formules_Disponibles&fields[]=Bonus_Score_Excellent` +
+      `&fields[]=Franchise_Min_EUR&fields[]=Franchise_Max_EUR`
     ),
   ]);
 
   if (!produitsRes.ok) return null;
   const data = await produitsRes.json() as { records: Array<{ id: string; fields: Record<string, unknown> }> };
-
-  // Si aucun produit avec champ Bonus_Max_Accepte → champs pas encore créés → fallback
-  const hasEligibiliteData = data.records.some(r => r.fields['Bonus_Max_Accepte'] != null);
-  if (!hasEligibiliteData) return null;
 
   const rules: CompagnieVehiculeRule[] = [];
 
@@ -110,8 +113,13 @@ export async function fetchVehiculeRules(): Promise<CompagnieVehiculeRule[] | nu
       formules_disponibles: formules.length ? formules : ['RC', 'Tiers Étendu', 'Tous Risques'],
       bonus_score_excellent: typeof f['Bonus_Score_Excellent'] === 'number' ? f['Bonus_Score_Excellent'] : undefined,
       prime_base: num(f['Prime_Base_EUR'], 900),
+      // Pas de défaut : une fourchette inventée serait pire qu'une fourchette absente.
+      franchise_min: typeof f['Franchise_Min_EUR'] === 'number' ? f['Franchise_Min_EUR'] : undefined,
+      franchise_max: typeof f['Franchise_Max_EUR'] === 'number' ? f['Franchise_Max_EUR'] : undefined,
     });
   }
 
-  return rules.length >= 2 ? rules : null;
+  // Au moins une compagnie réelle suffit pour charger — "instant update" dès qu'une
+  // ligne Produits_CIE est liée à une compagnie, même seule ou partiellement remplie.
+  return rules.length >= 1 ? rules : null;
 }
