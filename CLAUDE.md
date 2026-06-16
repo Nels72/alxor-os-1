@@ -1,6 +1,6 @@
 # CLAUDE.md — Alxor OS (Easy Courtage Assurance)
 
-> Contexte projet chargé à chaque session Claude Code. Mise à jour : 2026-06-14.
+> Contexte projet chargé à chaque session Claude Code. Mise à jour : 2026-06-16.
 > Aucun secret ici — toutes les clés/tokens sont dans `.env` (gitignoré) ou `.mcp.json` (gitignoré). Voir `docs/SETUP.md`.
 > **Ce dépôt (`Nels72/alxor-os-1`) est désormais l'unique dépôt vivant du projet.**
 
@@ -20,7 +20,8 @@
 | **Dropbox** (app `alxor-ged`) | GED : `/ged_alxor/{Cabinet}/{Contact}/{Dossier}/` + documents partenaires (fiches appétence) |
 | **n8n** (`https://n8n2.reaktimo.com`, projet `zwr2ku2Be5k6HNPX`) | Workflows IA : Distribution Lead, Extraction RI (×2), Extraction Devis, Renommage GED, Relance Docs, Création Prospect Cabinet, Auth Apporteur, Lookup Client, Yousign |
 | **Make.com** | Scénarios chatbots (4 Apporteur, 6 Web) : création Contact+Dossier+Documents puis appels webhooks n8n |
-| **Gemini 2.5 Flash** | Extraction RI/devis, classification documents (multimodal) |
+| **Gemini 2.5 Flash** | Extraction RI (direct), extraction devis (via OpenRouter), classification documents (multimodal) |
+| **OpenRouter** | Proxy LLM — utilisé pour l'extraction devis (`google/gemini-2.5-flash`) |
 | **Claude API** | Extraction des fiches appétence compagnies (prompts dans `ops/.basedeconnaissance/`) |
 | **Netlify** | Hébergement chatbot apporteur (`alex-apporteur-eca.netlify.app`) ; déploiement Cabinet prévu |
 | **Front Cabinet** | React 19 + Vite + TS + Zustand + Tailwind — racine de ce repo |
@@ -91,7 +92,7 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
 ## Conventions de travail
 
 - **Secrets** : jamais en dur dans un fichier — toujours `.env` (`AIRTABLE_PAT`, `DROPBOX_*`, `GEMINI_API_KEY*`, `GITHUB_PERSONAL_ACCESS_TOKEN`) + `process.env` via dotenv dans les scripts. Les tokens MCP (JWT n8n, PAT GitHub) sont dans `.mcp.json` et `~/.claude.json` (gitignoré).
-- **n8n** : toujours nœuds natifs plutôt que HTTP Request quand disponibles ; modifications via MCP n8n (outils : `search_workflows`, `get_workflow_details`, `execute_workflow`) ; consulter les skills n8n avant. MCP transport HTTP natif sur `https://n8n2.reaktimo.com/mcp-server/http`. v2.52 : Code nodes sandboxés (pas de `fetch`/`require`/`this.helpers`) → ExtractFromFile pour binary→base64.
+- **n8n** : toujours nœuds natifs plutôt que HTTP Request quand disponibles ; modifications via MCP n8n ou API REST (`X-N8N-API-KEY`, expire 2026-07-12) ; consulter les skills n8n avant. MCP : `czlonkowski/n8n-mcp` v2.57.4 en **stdio** avec REST API key (accès **tous** les workflows) — remplace le transport HTTP natif (`/mcp-server/http`) qui était limité à 2 workflows. v2.52 : Code nodes sandboxés (pas de `fetch`/`require`/`this.helpers`) → ExtractFromFile pour binary→base64.
 - **Gemini** : `gemini-2.5-flash` est un modèle à *thinking* → ne PAS mettre `maxOutputTokens` (JSON tronqué) ; utiliser `generationConfig: { response_mime_type: "application/json" }`.
 - **Make.com** : ne PAS modifier les blueprints JSON dans `ops/blueprints/` — uniquement via l'interface Make. Attachments optionnels : `{{ifempty(XX.field_url; emptyarray)}}`.
 - **Airtable** : accès direct API autorisé sans confirmation. Attention : un champ inexistant dans un PATCH → 422 qui annule tout. Plan gratuit : quota reset le 1er du mois (429 = attendre).
@@ -99,7 +100,7 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
 - **Front Cabinet** : développé dans la racine de ce repo (React 19 + Vite + Tailwind).
 - Gmail v2.2 (n8n) : `sendTo` (pas `toList`), `emailType`.
 
-## État d'avancement (2026-06-12)
+## État d'avancement (2026-06-15)
 
 **Fait et en production :**
 - Flux lead chatbot end-to-end (Web + Apporteur) : création Airtable → distribution lead → extraction RI → renommage GED → email courtier enrichi
@@ -162,6 +163,20 @@ Tables existantes clés : Dossiers `tblh45gV9PZcN1fkz`, Documents `tblfxKmkeklx4
   - `Pages/ProspectDetail.tsx` — bouton "Verso" compact affiché quand `max_files > 1` et doc déjà reçu, pour joindre le recto séparé
   - `ops/blueprints/` — blueprint Make module 57 `http:MakeRequest` (remplace `http:ActionSendData` inexistant), `stopOnHttpError: false`
   - commit `8386abe` pushé ✅
+
+- **MCP n8n full-scope — FAIT 2026-06-15** :
+  - `czlonkowski/n8n-mcp` v2.57.4 installé globalement (`npm install -g n8n-mcp`), configuré en **stdio** dans `~/.claude.json` avec la REST API key n8n (`X-N8N-API-KEY`, générée le 2026-06-14, expire 2026-07-12)
+  - Remplace le transport HTTP natif (`/mcp-server/http`) dont le JWT MCP (`aud: "mcp-server-api"`) ne donnait accès qu'à 2 workflows explicitement activés pour MCP (`cQMFVPZDiWsYZEyJ` et `bXsnWBqHFlCNJUTM`)
+  - La REST API key (`aud: "public-api"`) donne accès à **tous** les workflows
+  - Config dans `~/.claude.json` : `env: { N8N_API_URL, N8N_API_KEY, MCP_MODE: "stdio", LOG_LEVEL: "error" }`
+
+- **Workflow « Extraction Devis Compagnie » migré Groq → Gemini via OpenRouter — FAIT 2026-06-15** :
+  - Workflow `b2J65p6kFx2uVyzP` — 3 nœuds modifiés :
+    - « Prépare Payload Gemini » : modèle `google/gemini-2.5-flash` (était `meta-llama/llama-4-maverick-17b-128e-instruct`)
+    - « Extrait Devis via Gemini » : URL `https://openrouter.ai/api/v1/chat/completions` + clé OpenRouter (était `api.groq.com` + clé Groq)
+    - « Parse Données Devis » : références internes mises à jour
+  - Headers OpenRouter ajoutés : `HTTP-Referer: https://alxor-os.fr`, `X-Title: Alxor OS - Extraction Devis`
+  - Pipeline testé OK sur les 6 nœuds (webhook → payload → Gemini → parse → Presidio → Airtable) — erreur Airtable uniquement sur image test vide (date template non parsable), pas un problème d'intégration
 
 **Chantiers en cours / prochaines étapes :**
 0. ~~Corriger le credential n8n « Header Auth account »~~ — **FAIT 2026-06-12 via API** :
