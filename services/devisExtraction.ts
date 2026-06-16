@@ -44,10 +44,16 @@ function fileToBase64(file: File): Promise<string> {
 /**
  * Envoie le PDF du devis compagnie au webhook n8n pour extraction via Gemini.
  * Retourne les données structurées extraites (compagnie, formule, garanties, prime…).
+ *
+ * contactId/idDossier permettent au workflow n8n d'archiver le PDF original sur
+ * Dropbox (chemin /ged_alxor/{Cabinet}/{Contact}/{Dossier}/) en plus de l'extraction —
+ * sans eux, le devis n'est jamais archivé (seules les données extraites le sont).
  */
 export async function extractDevisData(
   dossierId: string,
-  file: File
+  file: File,
+  contactId?: string,
+  idDossier?: string,
 ): Promise<DevisExtrait> {
   if (!N8N_BASE) {
     throw new Error('N8N_BASE_URL non configuré — impossible d\'extraire le devis.');
@@ -60,6 +66,8 @@ export async function extractDevisData(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       dossier_id: dossierId,
+      contact_id: contactId,
+      id_dossier: idDossier,
       file_base64: base64,
       file_type: file.type || 'application/pdf',
     }),

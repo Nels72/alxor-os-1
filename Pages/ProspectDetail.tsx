@@ -415,7 +415,9 @@ const ProspectDetail: React.FC = () => {
         }
         try {
           if (id.startsWith('rec')) {
-            await uploadDocReal(id, type, labelOverride || docConfig?.label || type, file);
+            const contactIdForUpload = (prospect?.airtable_dossier_fields?.Contact as string[] | undefined)?.[0];
+            const idDossierForUpload = prospect?.airtable_dossier_fields?.ID_Dossier as string | undefined;
+            await uploadDocReal(id, type, labelOverride || docConfig?.label || type, file, contactIdForUpload, idDossierForUpload);
           } else {
             uploadDoc(id, type);
           }
@@ -1302,7 +1304,9 @@ const ProspectDetail: React.FC = () => {
                                 setIsExtractingDevis(true);
                                 setDevisExtractionError(null);
                                 try {
-                                  const result = await extractDevisData(prospect.id, file);
+                                  const contactIdForDevis = (prospect.airtable_dossier_fields?.Contact as string[] | undefined)?.[0];
+                                  const idDossierForDevis = prospect.airtable_dossier_fields?.ID_Dossier as string | undefined;
+                                  const result = await extractDevisData(prospect.id, file, contactIdForDevis, idDossierForDevis);
                                   setDevisExtrait(result);
                                 } catch (err: any) {
                                   setDevisExtractionError(err.message || 'Erreur d\'extraction');
@@ -1847,7 +1851,9 @@ const ProspectDetail: React.FC = () => {
               try {
                 const dossierId = prospect.id;
                 const ficType = (prospect.type_contrat_demande || 'auto').toLowerCase();
-                await uploadFicPdf(dossierId, blob, ficType, `${prospect.nom}_${prospect.prenom}`);
+                const contactIdForFic = (prospect.airtable_dossier_fields?.Contact as string[] | undefined)?.[0];
+                const idDossierForFic = prospect.airtable_dossier_fields?.ID_Dossier as string | undefined;
+                await uploadFicPdf(dossierId, blob, ficType, `${prospect.nom}_${prospect.prenom}`, contactIdForFic, idDossierForFic);
                 setFicGenerated(true);
                 updateProspect(prospect.id, { fiche_conseil_generee: true });
               } catch (err) {

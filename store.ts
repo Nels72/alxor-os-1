@@ -60,7 +60,7 @@ interface AppState {
   mergeProspectsFromAirtable: (incoming: Prospect[]) => void;
   airtableDocuments: Record<string, AirtableDocument[]>;
   loadDocumentsForDossier: (dossierId: string) => Promise<void>;
-  uploadDocReal: (dossierId: string, docType: string, label: string, file: File) => Promise<void>;
+  uploadDocReal: (dossierId: string, docType: string, label: string, file: File, contactId?: string, idDossier?: string) => Promise<void>;
   qualifyDocReal: (documentId: string, dossierId: string, statut: 'Valide' | 'Provisoire', dateEcheance?: string) => Promise<void>;
   vehiculeRules: CompagnieVehiculeRule[];
   loadVehiculeRules: () => Promise<void>;
@@ -381,8 +381,8 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  uploadDocReal: async (dossierId, docType, label, file) => {
-    const doc = await uploadDocumentCabinet({ file, dossierId, workflowDocType: docType, label });
+  uploadDocReal: async (dossierId, docType, label, file, contactId, idDossier) => {
+    const doc = await uploadDocumentCabinet({ file, dossierId, workflowDocType: docType, label, contactId, idDossier });
     set((s) => ({
       airtableDocuments: {
         ...s.airtableDocuments,
