@@ -50,6 +50,12 @@ export default defineConfig(({ mode }) => {
         'process.env.REACT_APP_N8N_UPLOAD_WEBHOOK': JSON.stringify(
           env.REACT_APP_N8N_UPLOAD_WEBHOOK ?? ''
         ),
+        'process.env.REACT_APP_OWNER_EMAIL': JSON.stringify(
+          env.REACT_APP_OWNER_EMAIL ?? ''
+        ),
+        'process.env.REACT_APP_OWNER_PASSWORD': JSON.stringify(
+          env.REACT_APP_OWNER_PASSWORD ?? ''
+        ),
       },
       resolve: {
         alias: {

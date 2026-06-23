@@ -56,28 +56,59 @@ export function clearCollaborateursCache(): void {
   collabCache = null;
 }
 
+const OWNER_EMAIL = (process.env.REACT_APP_OWNER_EMAIL || '').toLowerCase().trim();
+const OWNER_PASSWORD = process.env.REACT_APP_OWNER_PASSWORD || '';
+
+const OWNER_COLLAB: Collaborateur = {
+  id: 'local-owner',
+  nom: 'Nelson Duarte',
+  prenom: 'Nelson',
+  nomFamille: 'Duarte',
+  role: 'Admin',
+  statutActivite: 'Actif',
+  email: OWNER_EMAIL,
+};
+
 /**
  * Authentifie un collaborateur par email + mot de passe provisoire.
  * Retourne le collaborateur si trouvé et actif, null sinon.
+ * Fallback local owner si Airtable est inaccessible (quota, réseau).
  */
 export async function authenticateCollaborateur(
   email: string,
   password: string
 ): Promise<Collaborateur | null> {
-  const filterFormula = encodeURIComponent(
-    `AND({Email_Pro}="${email.toLowerCase().trim()}",{MDP_Prov}="${password}",{Statut_Activite}="Actif")`
-  );
-  const response = await airtableFetch(`${COLLAB_API_URL}?filterByFormula=${filterFormula}&maxRecords=1`);
-  if (!response.ok) throw new Error(`Erreur Airtable auth: ${response.status}`);
-  const data = await response.json();
-  if (!data.records || data.records.length === 0) return null;
-  const collab = mapRecord(data.records[0]);
-  // Mettre à jour le cache pour éviter un rechargement inutile
-  if (collabCache) {
-    const idx = collabCache.data.findIndex((c) => c.id === collab.id);
-    if (idx >= 0) collabCache.data[idx] = collab;
+  const normalizedEmail = email.toLowerCase().trim();
+
+  // Fallback owner : toujours disponible, même si Airtable est down
+  if (OWNER_EMAIL && normalizedEmail === OWNER_EMAIL && password === OWNER_PASSWORD) {
+    return OWNER_COLLAB;
   }
-  return collab;
+
+  try {
+    const filterFormula = encodeURIComponent(
+      `AND({Email_Pro}="${normalizedEmail}",{MDP_Prov}="${password}",{Statut_Activite}="Actif")`
+    );
+    const response = await airtableFetch(`${COLLAB_API_URL}?filterByFormula=${filterFormula}&maxRecords=1`);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      if ((body as Record<string, unknown>)?.errors || response.status === 429) {
+        throw new Error(`Airtable indisponible: ${response.status}`);
+      }
+      throw new Error(`Erreur Airtable auth: ${response.status}`);
+    }
+    const data = await response.json();
+    if (!data.records || data.records.length === 0) return null;
+    const collab = mapRecord(data.records[0]);
+    if (collabCache) {
+      const idx = collabCache.data.findIndex((c) => c.id === collab.id);
+      if (idx >= 0) collabCache.data[idx] = collab;
+    }
+    return collab;
+  } catch {
+    // Si Airtable est inaccessible et que ce n'est pas le owner, on ne peut pas authentifier
+    return null;
+  }
 }
 
 /**
