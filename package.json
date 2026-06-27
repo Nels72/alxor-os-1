@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node ./node_modules/vite/bin/vite.js",
+    "dev": "concurrently -n front,agent -c cyan,yellow \"node ./node_modules/vite/bin/vite.js\" \"npm run dev --prefix agent\"",
+    "dev:front": "node ./node_modules/vite/bin/vite.js",
+    "dev:agent": "npm run dev --prefix agent",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -23,6 +25,7 @@
     "@tailwindcss/vite": "^4.3.0",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^10.0.3",
     "tailwindcss": "^4.3.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
