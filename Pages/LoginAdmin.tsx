@@ -45,7 +45,6 @@ const LoginAdmin: React.FC = () => {
     event.preventDefault();
     setError('');
     setIsLoading(true);
-
     try {
       const collab = await authenticateCollaborateur(email, password);
       if (!collab) {

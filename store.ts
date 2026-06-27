@@ -5,6 +5,7 @@ import { mockUser, mockProspects, mockClients, mockContracts } from './mockData'
 import { WORKFLOW_DOCUMENTS } from './lib/preDevisDocuments';
 import { uploadDocumentCabinet, qualifyDocument, fetchDocumentsForDossier } from './services/documentUpload';
 import type { AirtableDocument } from './services/airtable';
+import { hasMatchingAirtableDoc } from './services/airtable';
 import { saveDDAPropositions, saveDDAChoixFinal } from './services/ddaService';
 import { runVehiculeMatching } from './lib/matchingEngine';
 import { VEHICULE_CODES } from './lib/prospectProductData';
@@ -168,32 +169,32 @@ export const useStore = create<AppState>((set, get) => ({
     const prospect = state.prospects.find(p => p.id === id);
     if (!prospect || prospect.statut === 'converti') return;
 
-    const docs = state.getProspectDocs(id);
-    // Accepte les codes Airtable (AUT, MRP) ET les anciens codes legacy (auto, mrp)
+    const uploadedDocs = state.getProspectDocs(id);
+    const airtableDocs = state.airtableDocuments[id] || [];
+    const hasDoc = (workflowKey: string) =>
+      uploadedDocs.includes(workflowKey) || hasMatchingAirtableDoc(workflowKey, airtableDocs);
+
     const rawKey = prospect.type_contrat_demande || 'AUT';
     const productKey = WORKFLOW_DOCUMENTS[rawKey] ? rawKey : rawKey.toLowerCase().replace(/\s+/g, '_');
     const config = WORKFLOW_DOCUMENTS[productKey] || WORKFLOW_DOCUMENTS['AUT'];
-    
-    // Phase 1 : GES granulaire (bloquants puis obligatoires)
+
     const bloquants = config.filter(d => d.phase === 1 && d.bloquant);
     const obligatoiresP1 = config.filter(d => d.phase === 1 && d.obligatoire);
     const phase2Required = config.filter(d => d.phase === 2 && d.obligatoire).map(d => d.type);
 
     let phase1Score = 0;
     if (bloquants.length > 0) {
-      // Produits avec bloquants : score = proportion des bloquants fournis × 60
-      const bloquantsFournis = bloquants.filter(d => docs.includes(d.type));
+      const bloquantsFournis = bloquants.filter(d => hasDoc(d.type));
       phase1Score = Math.round((bloquantsFournis.length / bloquants.length) * 60);
     } else if (obligatoiresP1.length > 0) {
-      // Produits sans bloquants : score = proportion des obligatoires fournis × 60
-      const obligatoiresFournis = obligatoiresP1.filter(d => docs.includes(d.type));
+      const obligatoiresFournis = obligatoiresP1.filter(d => hasDoc(d.type));
       phase1Score = Math.round((obligatoiresFournis.length / obligatoiresP1.length) * 60);
     } else {
-      phase1Score = 60; // Pas de docs Phase 1 → score max direct
+      phase1Score = 60;
     }
 
-    const allBloquantsFournis = bloquants.length === 0 || bloquants.every(d => docs.includes(d.type));
-    const phase2Complete = phase2Required.every(t => docs.includes(t));
+    const allBloquantsFournis = bloquants.length === 0 || bloquants.every(d => hasDoc(d.type));
+    const phase2Complete = phase2Required.every(t => hasDoc(t));
     const hasProvisoire = prospect.documents_provisoires && Object.keys(prospect.documents_provisoires).length > 0;
     const periodeIncompleteRI = !!prospect.periode_incomplete_ri;
 
@@ -376,6 +377,7 @@ export const useStore = create<AppState>((set, get) => ({
       set((s) => ({
         airtableDocuments: { ...s.airtableDocuments, [dossierId]: docs },
       }));
+      get().calculateAndSetGES(dossierId);
     } catch (err) {
       console.error('Erreur chargement documents:', err);
     }

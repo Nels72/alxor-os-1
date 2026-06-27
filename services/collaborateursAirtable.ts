@@ -79,15 +79,16 @@ export async function authenticateCollaborateur(
   password: string
 ): Promise<Collaborateur | null> {
   const normalizedEmail = email.toLowerCase().trim();
+  const normalizedPassword = password.trim();
 
   // Fallback owner : toujours disponible, même si Airtable est down
-  if (OWNER_EMAIL && normalizedEmail === OWNER_EMAIL && password === OWNER_PASSWORD) {
+  if (OWNER_EMAIL && normalizedEmail === OWNER_EMAIL && normalizedPassword === OWNER_PASSWORD) {
     return OWNER_COLLAB;
   }
 
   try {
     const filterFormula = encodeURIComponent(
-      `AND({Email_Pro}="${normalizedEmail}",{MDP_Prov}="${password}",{Statut_Activite}="Actif")`
+      `AND({Email_Pro}="${normalizedEmail}",{MDP_Prov}="${normalizedPassword}",{Statut_Activite}="Actif")`
     );
     const response = await airtableFetch(`${COLLAB_API_URL}?filterByFormula=${filterFormula}&maxRecords=1`);
     if (!response.ok) {
@@ -106,7 +107,6 @@ export async function authenticateCollaborateur(
     }
     return collab;
   } catch {
-    // Si Airtable est inaccessible et que ce n'est pas le owner, on ne peut pas authentifier
     return null;
   }
 }

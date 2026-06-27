@@ -32,3 +32,29 @@ export async function sendDevisForSignature(
 
   return data as SignatureResponse;
 }
+
+export async function sendContratForSignature(
+  dossierId: string,
+  contactId: string
+): Promise<SignatureResponse> {
+  if (!N8N_BASE) {
+    throw new Error('N8N_BASE_URL non configuré');
+  }
+
+  const response = await fetch(`${N8N_BASE}/webhook/yousign-contrat-ready`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      dossier_id: dossierId,
+      contact_id: contactId,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || data.status === 'error') {
+    throw new Error(data.message || `Erreur signature contrat (${response.status})`);
+  }
+
+  return data as SignatureResponse;
+}

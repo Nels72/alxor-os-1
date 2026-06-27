@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
-  X, Eye, Download, Upload, FileText, Check,
+  X, Eye, Download, Upload, FileText, Check, Send, Printer,
   ShieldCheck, AlertTriangle, Euro, Loader2,
 } from 'lucide-react';
 import type { Prospect, AISuggestion } from '../types';
-import type { DevisExtrait } from '../services/devisExtraction';
+import type { DevisExtrait, FicBrouillon } from '../services/devisExtraction';
 import {
   buildFicData,
   FIC_TITLES,
@@ -21,30 +21,73 @@ interface FicFormModalProps {
   prospect: Prospect;
   suggestion: AISuggestion;
   devisExtrait: DevisExtrait | null;
+  ficBrouillon?: FicBrouillon;
   onClose: () => void;
   onGenerated?: (blob: Blob) => void;
+  onValidateAndSign?: (pdfBase64: string, fraisDossier: number, recommandation: string) => Promise<void>;
+  onManualSign?: (fraisDossier: number, recommandation: string) => Promise<void>;
 }
 
 const FicFormModal: React.FC<FicFormModalProps> = ({
   prospect,
   suggestion,
   devisExtrait,
+  ficBrouillon,
   onClose,
   onGenerated,
+  onValidateAndSign,
+  onManualSign,
 }) => {
-  const [fraisDossier, setFraisDossier] = useState(0);
+  const [fraisDossier, setFraisDossier] = useState(ficBrouillon?.frais_dossier_ttc || 0);
   const [recommandation, setRecommandation] = useState(
-    suggestion.note_expertise_courtier || suggestion.justification?.join('. ') || ''
+    ficBrouillon?.recommandation_courtier || suggestion.note_expertise_courtier || suggestion.justification?.join('. ') || ''
   );
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [generated, setGenerated] = useState(false);
+  const [validated, setValidated] = useState(false);
+  const [manualSigned, setManualSigned] = useState(false);
 
-  // Construire les données FIC pré-remplies
   const ficData = useMemo<FicData>(() => {
     const data = buildFicData(prospect, suggestion, devisExtrait, fraisDossier);
-    // Override la recommandation avec la valeur éditée
-    return { ...data, recommandation } as FicData;
-  }, [prospect, suggestion, devisExtrait, fraisDossier, recommandation]);
+    const merged = { ...data, recommandation } as FicData;
+
+    if (ficBrouillon) {
+      if (ficBrouillon.souscripteur?.adresse && !merged.souscripteur.adresse) {
+        merged.souscripteur.adresse = ficBrouillon.souscripteur.adresse;
+      }
+      if (ficBrouillon.souscripteur?.telephone && !merged.souscripteur.telephone) {
+        merged.souscripteur.telephone = ficBrouillon.souscripteur.telephone;
+      }
+      if (ficBrouillon.souscripteur?.email && !merged.souscripteur.email) {
+        merged.souscripteur.email = ficBrouillon.souscripteur.email;
+      }
+      if (ficBrouillon.contrat?.compagnie && !merged.compagnie) {
+        merged.compagnie = ficBrouillon.contrat.compagnie;
+      }
+      if (ficBrouillon.contrat?.formule && !merged.formuleProposee) {
+        merged.formuleProposee = ficBrouillon.contrat.formule;
+      }
+      if (ficBrouillon.contrat?.prime_annuelle_ttc && !merged.primeAnnuelleTTC) {
+        merged.primeAnnuelleTTC = ficBrouillon.contrat.prime_annuelle_ttc;
+      }
+      if (ficBrouillon.garanties?.length && !merged.garanties.length) {
+        merged.garanties = ficBrouillon.garanties;
+      }
+      if (ficBrouillon.options?.length && !merged.options.length) {
+        merged.options = ficBrouillon.options;
+      }
+      if ('type' in merged && merged.type === 'auto' && ficBrouillon.vehicule) {
+        const auto = merged as FicData & { vehicule: Record<string, string> };
+        if (ficBrouillon.vehicule.marque && !auto.vehicule.marque) auto.vehicule.marque = ficBrouillon.vehicule.marque;
+        if (ficBrouillon.vehicule.modele && !auto.vehicule.modele) auto.vehicule.modele = ficBrouillon.vehicule.modele;
+        if (ficBrouillon.vehicule.immatriculation && !auto.vehicule.immatriculation) auto.vehicule.immatriculation = ficBrouillon.vehicule.immatriculation;
+      }
+    }
+
+    return merged;
+  }, [prospect, suggestion, devisExtrait, ficBrouillon, fraisDossier, recommandation]);
 
   const productTitle = FIC_TITLES[ficData.type] || ficData.type.toUpperCase();
 
@@ -74,6 +117,45 @@ const FicFormModal: React.FC<FicFormModalProps> = ({
       console.error('Erreur génération PDF:', err);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleValidateAndSign = async () => {
+    if (!onValidateAndSign) return;
+    setIsValidating(true);
+    try {
+      const blob = await generateFicPdf({ ...ficData, fraisDossierTTC: fraisDossier, recommandation } as FicData);
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      await onValidateAndSign(base64, fraisDossier, recommandation);
+      setValidated(true);
+      setGenerated(true);
+    } catch (err) {
+      console.error('Erreur validation FIC:', err);
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  const handleManualSign = async () => {
+    if (!onManualSign) return;
+    setIsPrinting(true);
+    try {
+      await downloadFicPdf({ ...ficData, fraisDossierTTC: fraisDossier, recommandation } as FicData);
+      await onManualSign(fraisDossier, recommandation);
+      setManualSigned(true);
+      setGenerated(true);
+    } catch (err) {
+      console.error('Erreur signature manuscrite:', err);
+    } finally {
+      setIsPrinting(false);
     }
   };
 
@@ -231,53 +313,78 @@ const FicFormModal: React.FC<FicFormModalProps> = ({
         </div>
 
         {/* Footer actions */}
-        <div className="p-6 md:p-8 border-t border-slate-100 bg-white shrink-0">
+        <div className="p-6 md:p-8 border-t border-slate-100 bg-white shrink-0 space-y-4">
+          {/* Ligne 1 : Aperçu + Générer */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Aperçu */}
             <button
               onClick={handlePreview}
               className="px-5 py-3 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all"
             >
               <Eye size={16} /> Aperçu
             </button>
-
-            {/* Télécharger PDF */}
             <button
               onClick={handleDownload}
               disabled={isGenerating}
               className="px-5 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50"
             >
-              {isGenerating ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Download size={16} />
-              )}
+              {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               Générer PDF
             </button>
-
-            {/* Générer & Archiver */}
             {onGenerated && (
               <button
                 onClick={handleGenerateAndArchive}
                 disabled={isGenerating}
                 className="px-5 py-3 rounded-xl bg-green-600 text-white hover:bg-green-700 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50"
               >
-                {isGenerating ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Upload size={16} />
-                )}
+                {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                 Générer &amp; Archiver
               </button>
             )}
-
-            {/* Indicateur généré */}
-            {generated && (
-              <span className="flex items-center gap-2 text-green-600 text-sm font-bold ml-auto">
-                <Check size={16} /> FIC générée
-              </span>
-            )}
           </div>
+
+          {/* Ligne 2 : Signature — deux options */}
+          {(onValidateAndSign || onManualSign) && !validated && !manualSigned && (
+            <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-100">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Signature :</span>
+              {onValidateAndSign && (
+                <button
+                  onClick={handleValidateAndSign}
+                  disabled={isValidating || isGenerating || isPrinting}
+                  className="px-5 py-3 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50"
+                >
+                  {isValidating ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  Signature électronique
+                </button>
+              )}
+              {onManualSign && (
+                <button
+                  onClick={handleManualSign}
+                  disabled={isPrinting || isValidating || isGenerating}
+                  className="px-5 py-3 rounded-xl bg-amber-600 text-white hover:bg-amber-700 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50"
+                >
+                  {isPrinting ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+                  Imprimer &amp; Signature manuscrite
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Indicateurs de statut */}
+          {validated && (
+            <div className="flex items-center gap-2 text-emerald-600 text-sm font-bold pt-2">
+              <Check size={16} /> FIC validée — Signature électronique en cours
+            </div>
+          )}
+          {manualSigned && (
+            <div className="flex items-center gap-2 text-amber-600 text-sm font-bold pt-2">
+              <Check size={16} /> FIC téléchargée — Signature manuscrite validée
+            </div>
+          )}
+          {generated && !validated && !manualSigned && (
+            <div className="flex items-center gap-2 text-green-600 text-sm font-bold">
+              <Check size={16} /> FIC générée
+            </div>
+          )}
         </div>
       </motion.div>
     </div>

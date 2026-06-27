@@ -9,6 +9,16 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        proxy: {
+          '/api/alex': {
+            target: 'http://127.0.0.1:3001',
+            changeOrigin: true,
+          },
+          '/health': {
+            target: 'http://127.0.0.1:3001',
+            changeOrigin: true,
+          },
+        },
       },
       plugins: [react(), tailwindcss()],
       define: {
@@ -55,6 +65,9 @@ export default defineConfig(({ mode }) => {
         ),
         'process.env.REACT_APP_OWNER_PASSWORD': JSON.stringify(
           env.REACT_APP_OWNER_PASSWORD ?? ''
+        ),
+        'process.env.REACT_APP_ALEX_URL': JSON.stringify(
+          env.REACT_APP_ALEX_URL ?? 'http://localhost:3001'
         ),
       },
       resolve: {

@@ -221,6 +221,17 @@ export function mapDocTypeToAirtable(workflowType: string): DocumentType {
   return DOC_TYPE_MAPPING[workflowType] || 'Autre';
 }
 
+export function hasMatchingAirtableDoc(workflowKey: string, docs: AirtableDocument[]): boolean {
+  const airtableType = DOC_TYPE_MAPPING[workflowKey];
+  if (!airtableType || airtableType === 'Autre') {
+    return docs.some(d => {
+      const fn = (d.fields.Nom_Fichier || '').toLowerCase();
+      return fn.includes(workflowKey.replace(/_/g, ' ')) || fn.includes(workflowKey);
+    });
+  }
+  return docs.some(d => d.fields.Type_Document === airtableType);
+}
+
 // ── Mapping produits via PRODUCT_CATALOG ────────────────────
 import { PRODUCT_CATALOG, getProductByCode } from '../lib/productCatalog';
 import { hydrateAutoProductData, isVehiculeProduct } from '../lib/prospectProductData';

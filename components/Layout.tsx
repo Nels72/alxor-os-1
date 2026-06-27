@@ -11,10 +11,12 @@ import {
   ChevronRight,
   ChevronDown,
   ShieldCheck,
-  Check
+  Check,
+  MessageSquare,
 } from 'lucide-react';
 import { useStore } from '../store';
 import Logo from './Logo';
+import AlexPanel from './AlexPanel';
 import {
   listCollaborateurs,
   Collaborateur,
@@ -30,6 +32,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const [collabs, setCollabs] = useState<Collaborateur[]>([]);
   const [selectorOpen, setSelectorOpen] = useState(false);
+  const [alexOpen, setAlexOpen] = useState(false);
   const selectorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -175,6 +178,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <main className="flex-1 overflow-auto">
         {children}
       </main>
+
+      {/* Bouton flottant Alex */}
+      <button
+        onClick={() => setAlexOpen(true)}
+        className={`fixed bottom-6 right-6 w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-lg flex items-center justify-center transition-all z-40 ${alexOpen ? 'scale-0' : 'scale-100'}`}
+        title="Ouvrir Alex Assistant"
+      >
+        <MessageSquare size={24} />
+      </button>
+
+      {/* Panneau Alex */}
+      <AlexPanel isOpen={alexOpen} onClose={() => setAlexOpen(false)} />
     </div>
   );
 };

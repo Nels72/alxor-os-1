@@ -19,10 +19,12 @@ import { getDossierById, getContactById, mapDossierToProspect, mapDocTypeToAirta
 import { saveDDAChoixFinal } from '../services/ddaService';
 import FicheTarification from '../components/FicheTarification';
 import FicFormModal from '../components/FicFormModal';
-import { extractDevisData, type DevisExtrait } from '../services/devisExtraction';
+import { extractDevisData, type DevisExtrait, type FicBrouillon } from '../services/devisExtraction';
 import { extractRIData, type RIExtrait } from '../services/extractionRI';
 import { uploadFicPdf } from '../services/documentUpload';
-import { sendDevisForSignature } from '../services/yousignService';
+import { sendDevisForSignature, sendContratForSignature } from '../services/yousignService';
+import { validerFic } from '../services/ficValidation';
+import { analyseDocument, type AnalyseDocumentResult } from '../services/analyseDocumentProspect';
 import { hydrateAutoProductData, isVehiculeProduct, calcAge, calcAnciennetePermis, permisAvantAgeMinimum, AGE_MIN_PERMIS, type AutoProductData } from '../lib/prospectProductData';
 import { Lock } from 'lucide-react';
 
@@ -118,8 +120,9 @@ const ProspectDetail: React.FC = () => {
   };
   const [showConversionSuccessModal, setShowConversionSuccessModal] = useState(false);
   const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
-  const [isContractModalOpen, setIsContractModalOpen] = useState(false);
-  const [previewingDoc, setPreviewingDoc] = useState<{ label: string; url?: string } | null>(null);
+
+  const [previewingDoc, setPreviewingDoc] = useState<{ label: string; url?: string; fileName?: string } | null>(null);
+  const [previewError, setPreviewError] = useState(false);
   const [isValidatingSignature, setIsValidatingSignature] = useState(false);
   const [isSendingYousign, setIsSendingYousign] = useState(false);
   const [yousignError, setYousignError] = useState<string | null>(null);
@@ -135,9 +138,16 @@ const ProspectDetail: React.FC = () => {
   const [showFicheTarification, setShowFicheTarification] = useState(false);
   const [showFicModal, setShowFicModal] = useState(false);
   const [devisExtrait, setDevisExtrait] = useState<DevisExtrait | null>(null);
+  const [ficBrouillon, setFicBrouillon] = useState<FicBrouillon | undefined>(undefined);
   const [isExtractingDevis, setIsExtractingDevis] = useState(false);
   const [devisExtractionError, setDevisExtractionError] = useState<string | null>(null);
   const [ficGenerated, setFicGenerated] = useState(false);
+  const [ficValidated, setFicValidated] = useState(false);
+  const [isUploadingContrat, setIsUploadingContrat] = useState(false);
+  const [contratUploaded, setContratUploaded] = useState(false);
+  const [contratUploadError, setContratUploadError] = useState<string | null>(null);
+  const [isSendingContratSignature, setIsSendingContratSignature] = useState(false);
+  const [contratSignatureError, setContratSignatureError] = useState<string | null>(null);
   const [riExtrait, setRiExtrait] = useState<RIExtrait | null>(null);
   const [isExtractingRI, setIsExtractingRI] = useState(false);
   const [riExtractionError, setRiExtractionError] = useState<string | null>(null);
@@ -288,50 +298,51 @@ const ProspectDetail: React.FC = () => {
     }
   };
 
-  const handleSendFinalContract = () => {
-    if (id) {
+  const handleContratUpload = async (file: File) => {
+    if (!prospect || !id || !id.startsWith('rec')) return;
+    setIsUploadingContrat(true);
+    setContratUploadError(null);
+    try {
+      const contactId = (prospect.airtable_dossier_fields?.Contact as string[] | undefined)?.[0];
+      const idDossier = prospect.airtable_dossier_fields?.ID_Dossier as string | undefined;
+      await uploadDocReal(id, 'contrat_definitif', 'Contrat Final', file, contactId, idDossier);
+      setContratUploaded(true);
       updateProspect(id, { contrat_definitif_envoye: true });
-      setIsContractModalOpen(false);
+    } catch (err: any) {
+      setContratUploadError(err.message || 'Erreur upload contrat');
+    } finally {
+      setIsUploadingContrat(false);
     }
   };
 
-  const handleManualSignatureValidation = async () => {
-    if (id) {
-      setIsValidatingSignature(true);
-      await new Promise(resolve => setTimeout(resolve, 600));
-      validateManualSignature(id);
-      setIsValidatingSignature(false);
-    }
-  };
-
-  const handleSendYousignSignature = async () => {
+  const handleContratSignatureElectronique = async () => {
     if (!prospect || !id) return;
     const contactId = (prospect.airtable_dossier_fields?.Contact as string[] | undefined)?.[0];
     if (!contactId) {
-      setYousignError('Contact Airtable introuvable pour ce dossier.');
+      setContratSignatureError('Contact Airtable introuvable.');
       return;
     }
-    setIsSendingYousign(true);
-    setYousignError(null);
+    setIsSendingContratSignature(true);
+    setContratSignatureError(null);
     try {
-      await sendDevisForSignature(id, contactId);
+      await sendContratForSignature(id, contactId);
       updateProspect(id, {
         airtable_dossier_fields: {
           ...prospect.airtable_dossier_fields,
-          Statut_Signature: 'En attente signature devis',
+          Statut_Signature: 'En attente signature contrat',
         },
       });
     } catch (err: any) {
-      setYousignError(err.message || 'Erreur lors de l\'envoi en signature');
+      setContratSignatureError(err.message || 'Erreur signature contrat');
     } finally {
-      setIsSendingYousign(false);
+      setIsSendingContratSignature(false);
     }
   };
 
-  const handleFinalSignatureValidation = async () => {
+  const handleContratSignatureManuelle = async () => {
     if (id) {
       setIsValidatingFinalSignature(true);
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => setTimeout(resolve, 600));
       validateFinalContractSignature(id);
       setIsValidatingFinalSignature(false);
     }
@@ -402,6 +413,50 @@ const ProspectDetail: React.FC = () => {
     }
   };
 
+  const [docAnalysisResult, setDocAnalysisResult] = useState<AnalyseDocumentResult | null>(null);
+  const [isAnalysingDoc, setIsAnalysingDoc] = useState<string | null>(null);
+  const [docAnalysisError, setDocAnalysisError] = useState<string | null>(null);
+
+  const runDocAnalysis = async (file: File, documentType: 'carte_grise' | 'permis_conduire') => {
+    if (!id || !prospect || !prospect.id.startsWith('rec')) return;
+    setIsAnalysingDoc(documentType);
+    setDocAnalysisError(null);
+    try {
+      const contactId = (prospect.airtable_dossier_fields?.Contact as string[] | undefined)?.[0];
+      const idDossier = prospect.airtable_dossier_fields?.ID_Dossier as string | undefined;
+      const typeContrat = (prospect.airtable_dossier_fields?.Type_Contrat as string) || prospect.type_contrat_demande || 'AUT';
+      const result = await analyseDocument(prospect.id, file, documentType, typeContrat, contactId, idDossier);
+      setDocAnalysisResult(result);
+      if (result.success) {
+        const updatedFields: Record<string, unknown> = { ...(prospect.airtable_dossier_fields || {}) };
+        if (documentType === 'carte_grise' && result.cg) {
+          updatedFields.CG_Traitee = true;
+          updatedFields.CG_Type = result.cg.type_document;
+          updatedFields.Flag_Relance_CG = result.flag_relance_cg || false;
+          if (result.cg.immatriculation) {
+            updatedFields.Immatriculation_Véhicule = result.cg.immatriculation;
+          }
+        }
+        if (documentType === 'permis_conduire' && result.permis) {
+          updatedFields.Permis_Traite = true;
+          updatedFields.Permis_Categorie_Cible = result.permis.categorie_cible;
+          updatedFields.Flag_Relance_Permis = result.flag_relance_permis || false;
+          if (result.permis.date_obtention_categorie_cible) {
+            updatedFields.Permis_Date_Obtention_Cible = result.permis.date_obtention_categorie_cible;
+          }
+        }
+        updateProspect(prospect.id, { airtable_dossier_fields: updatedFields });
+      }
+      if (result.alerte) {
+        setDocAnalysisError(result.alerte);
+      }
+    } catch (err) {
+      setDocAnalysisError(err instanceof Error ? err.message : 'Erreur analyse document');
+    } finally {
+      setIsAnalysingDoc(null);
+    }
+  };
+
   const triggerFileUpload = (type: string, phase: number, labelOverride?: string) => {
     const docConfig = configDocs.find(d => d.type === type);
     const input = document.createElement('input');
@@ -429,6 +484,13 @@ const ProspectDetail: React.FC = () => {
             isVehiculeProduct(prospect?.type_contrat_demande || '')
           ) {
             runRIExtraction(file).catch(console.error);
+          }
+          // Auto-analyse CG ou permis à l'upload (produits véhicule)
+          if (
+            (type === 'carte_grise' || type === 'permis_conduire') &&
+            isVehiculeProduct(prospect?.type_contrat_demande || '')
+          ) {
+            runDocAnalysis(file, type).catch(console.error);
           }
         } catch (err) {
           console.error('Erreur upload:', err);
@@ -930,7 +992,8 @@ const ProspectDetail: React.FC = () => {
                             <div className="flex items-center gap-2">
                               {isUploaded && <button onClick={() => {
                                 const url = atDoc?.fields.Dropbox_URL || airtableFiles?.[0]?.url;
-                                setPreviewingDoc({ label: doc.label, url });
+                                setPreviewingDoc({ label: doc.label, url, fileName: atDoc?.fields.Nom_Fichier });
+                                setPreviewError(false);
                               }} className="p-3 text-[#4F7CFF] hover:bg-blue-100 rounded-xl transition-all"><Eye size={20} /></button>}
                               {!isUploaded && !isScanningThis ? (
                                 <button onClick={() => triggerFileUpload(doc.type, 1)} className="px-6 py-3 bg-white border-2 border-[#4F7CFF]/40 rounded-xl text-[10px] font-black text-[#4F7CFF] uppercase tracking-widest hover:bg-[#4F7CFF]/5 transition-all flex items-center gap-2"><Upload size={14} /> Joindre</button>
@@ -1308,6 +1371,7 @@ const ProspectDetail: React.FC = () => {
                                   const idDossierForDevis = prospect.airtable_dossier_fields?.ID_Dossier as string | undefined;
                                   const result = await extractDevisData(prospect.id, file, contactIdForDevis, idDossierForDevis);
                                   setDevisExtrait(result);
+                                  if (result.ficBrouillon) setFicBrouillon(result.ficBrouillon);
                                 } catch (err: any) {
                                   setDevisExtractionError(err.message || 'Erreur d\'extraction');
                                 } finally {
@@ -1326,9 +1390,11 @@ const ProspectDetail: React.FC = () => {
                             <button
                               onClick={() => setShowFicModal(true)}
                               className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-4 transition-all shadow-xl hover:scale-[1.01]
-                                ${ficGenerated ? 'bg-green-600 text-white' : 'bg-slate-900 text-white'}`}
+                                ${ficValidated ? 'bg-emerald-600 text-white' : ficGenerated ? 'bg-green-600 text-white' : 'bg-slate-900 text-white'}`}
                             >
-                              {ficGenerated ? (
+                              {ficValidated ? (
+                                <><Check size={22} /> FIC validée — Signature en cours</>
+                              ) : ficGenerated ? (
                                 <><Check size={22} /> FIC générée</>
                               ) : (
                                 <><FileText size={22} /> Générer FIC</>
@@ -1391,26 +1457,15 @@ const ProspectDetail: React.FC = () => {
                             <span className="px-6 py-2.5 text-[9px] font-black uppercase rounded-xl bg-amber-500 text-white flex items-center gap-2">
                               <Loader2 size={14} className="animate-spin" /> Signature en cours...
                             </span>
+                          ) : signatureDevisValidee ? (
+                            <span className="px-6 py-2.5 text-[9px] font-black uppercase rounded-xl bg-amber-100 text-amber-700 flex items-center gap-2 border border-amber-200">
+                              <Check size={14} /> Signature manuscrite
+                            </span>
                           ) : (
-                            <button
-                              onClick={handleSendYousignSignature}
-                              disabled={isSendingYousign || !isRecId}
-                              className="px-6 py-2.5 text-[9px] font-black uppercase rounded-xl shadow-lg flex items-center gap-2 transition-all bg-[#4F7CFF] text-white hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
-                            >
-                              {isSendingYousign ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                              {canResend ? 'Renvoyer en Signature' : 'Envoyer en Signature'}
-                            </button>
+                            <span className="px-6 py-2.5 text-[9px] font-black uppercase rounded-xl bg-slate-100 text-slate-500 flex items-center gap-2 border border-slate-200">
+                              <FileText size={14} /> Via modale FIC
+                            </span>
                           )}
-                          {!isDevisSigne && !isEnAttente && (
-                            <button
-                              onClick={handleManualSignatureValidation}
-                              disabled={isValidatingSignature}
-                              className="text-[9px] text-slate-400 hover:text-slate-600 underline font-medium transition-colors"
-                            >
-                              {isValidatingSignature ? 'Validation...' : 'Valider signature manuelle'}
-                            </button>
-                          )}
-                          {yousignError && <p className="text-[10px] text-red-500 font-medium max-w-[250px] text-right">{yousignError}</p>}
                         </div>
                       </div>
                       );
@@ -1498,7 +1553,8 @@ const ProspectDetail: React.FC = () => {
                           <div className="flex items-center gap-2">
                             {isUploaded && <button onClick={() => {
                               const atd = findAirtableDoc(doc.type);
-                              setPreviewingDoc({ label: doc.label, url: atd?.fields.Dropbox_URL || undefined });
+                              setPreviewingDoc({ label: doc.label, url: atd?.fields.Dropbox_URL || undefined, fileName: atd?.fields.Nom_Fichier });
+                              setPreviewError(false);
                             }} className="p-3 text-[#4F7CFF] hover:bg-blue-100 rounded-xl transition-all"><Eye size={20} /></button>}
                             {!isUploaded ? <button onClick={() => triggerFileUpload(doc.type, 2)} className="px-6 py-3 bg-white border-2 border-[#4F7CFF]/40 rounded-xl text-[10px] font-black text-[#4F7CFF] uppercase tracking-widest hover:bg-[#4F7CFF]/5 transition-all flex items-center gap-2"><Upload size={14} /> Joindre</button> : <span className="px-4 py-2 bg-green-50 text-green-600 rounded-xl font-black text-[10px] uppercase border border-green-100">Reçu</span>}
                           </div>
@@ -1510,7 +1566,7 @@ const ProspectDetail: React.FC = () => {
 
                 {/* Phase 3 : Finalisation */}
                 {phase3Docs.length > 0 && (
-                  <div className={`bg-white border rounded-[2.5rem] p-6 md:p-10 shadow-sm transition-all ${!prospect.ia_analysis_done ? 'opacity-50 grayscale pointer-events-none' : 'opacity-100'}`}>
+                  <div id="phase-3-section" className={`bg-white border rounded-[2.5rem] p-6 md:p-10 shadow-sm transition-all ${!prospect.ia_analysis_done ? 'opacity-50 grayscale pointer-events-none' : 'opacity-100'}`}>
                     <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-10 gap-4">
                       <div>
                         <div className="flex items-center gap-3 mb-2">
@@ -1521,73 +1577,75 @@ const ProspectDetail: React.FC = () => {
                       </div>
                     </div>
                     <div className="space-y-4">
-                      {phase3Docs.map(doc => {
-                        const contratEnvoye = prospect.contrat_definitif_envoye;
-                        const isProvisoire = doc.peut_etre_provisoire && prospect?.documents_provisoires?.[doc.type];
-                        const showProvisoireOption = doc.peut_etre_provisoire && (contratEnvoye || signatureContratValidee);
-                        // Badge orange : échéance dépassée pour docs provisoires Phase 3
-                        const isEcheanceDepasseeP3 = (() => {
-                          if (!isProvisoire) return false;
-                          const echeanceStr = prospect?.documents_provisoires?.[doc.type]?.date_echeance;
-                          if (!echeanceStr) return false;
-                          return new Date(echeanceStr) < new Date();
-                        })();
-                        return (
-                          <div key={doc.type} className={`flex flex-col gap-4 p-5 rounded-3xl border transition-all ${signatureContratValidee ? 'bg-green-50 border-green-200' : (contratEnvoye ? 'bg-blue-50 border-blue-100 shadow-sm' : 'bg-white border-slate-200 shadow-sm')} ${isProvisoire ? 'border-orange-300 bg-orange-50/50' : ''}`}>
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                              <div className="flex items-center gap-5">
-                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border-2 shrink-0 ${signatureContratValidee ? 'bg-white border-green-200 text-[#10B981]' : isProvisoire ? 'bg-orange-100 border-orange-200 text-orange-600' : 'bg-white border-blue-100 text-[#4F7CFF]'}`}>
-                                  <ShieldCheck size={24} />
-                                </div>
-                                <div>
-                                  <p className="text-base font-bold text-slate-900">{doc.label}</p>
-                                  <p className="text-[11px] text-slate-400 font-bold uppercase">{signatureContratValidee ? 'Signé' : contratEnvoye ? 'En attente de signature' : 'Charger depuis extranet compagnie'}</p>
-                                  {isProvisoire && prospect.documents_provisoires?.[doc.type] && <p className="text-[10px] font-bold text-orange-600 mt-1">Provisoire • Échéance : {prospect.documents_provisoires[doc.type].date_echeance}</p>}
-                                  {isEcheanceDepasseeP3 && (
-                                    <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider bg-orange-500 text-white border border-orange-600 animate-pulse">
-                                      <AlertTriangle size={10} /> Échéance dépassée
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {signatureDevisValidee && !signatureContratValidee && !contratEnvoye && (
-                                  <button onClick={() => setIsContractModalOpen(true)} className="px-6 py-2.5 bg-slate-900 text-white text-[9px] font-black uppercase rounded-xl shadow-lg flex items-center gap-2 hover:scale-105 transition-all"><Upload size={14} /> Charger Contrat</button>
-                                )}
-                                {!signatureContratValidee && contratEnvoye && (
-                                  <button onClick={handleFinalSignatureValidation} disabled={isValidatingFinalSignature} className="px-6 py-2.5 bg-[#10B981] text-white text-[9px] font-black uppercase rounded-xl shadow-lg flex items-center gap-2">
-                                    {isValidatingFinalSignature ? <Loader2 size={14} className="animate-spin" /> : <Handshake size={14} />}
-                                    Valider Retour Signé (100%)
-                                  </button>
-                                )}
-                                {signatureContratValidee && <span className="text-green-600 font-black text-[10px] uppercase flex items-center gap-2"><CheckCircle size={16}/> Police active</span>}
-                              </div>
-                            </div>
-                            {showProvisoireOption && (
-                              <div className="pt-4 border-t border-slate-100">
-                                <label className="flex items-center gap-3 cursor-pointer">
-                                  <input type="checkbox" checked={!!isProvisoire || editingProvisoireFor === doc.type}
-                                    onChange={(e) => {
-                                      if (!id || !prospect) return;
-                                      if (e.target.checked) { setEditingProvisoireFor(doc.type); setDraftDateEcheance(prospect.documents_provisoires?.[doc.type]?.date_echeance || new Date(Date.now() + (doc.delai_provisoire_jours ?? 90)*24*60*60*1000).toISOString().slice(0,10)); }
-                                      else { setEditingProvisoireFor(null); const { [doc.type]: _, ...rest } = prospect.documents_provisoires || {}; updateProspect(id, { documents_provisoires: Object.keys(rest).length ? rest : undefined }); }
-                                    }}
-                                    className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500" />
-                                  <span className="text-sm font-bold text-slate-700">Document Provisoire</span>
-                                </label>
-                                {editingProvisoireFor === doc.type && (
-                                  <div className="mt-3 flex gap-2 items-end">
-                                    <div className="flex-1"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Date d&apos;échéance</label>
-                                    <input type="date" value={draftDateEcheance} onChange={e => setDraftDateEcheance(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm" /></div>
-                                    <button onClick={() => { updateProspect(prospect.id, { documents_provisoires: { ...prospect.documents_provisoires, [doc.type]: { date_echeance: draftDateEcheance } } }); setEditingProvisoireFor(null); }} className="px-4 py-2 rounded-xl bg-orange-500 text-white text-[10px] font-black">OK</button>
-                                    <button onClick={() => setEditingProvisoireFor(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-[10px] font-bold">Annuler</button>
-                                  </div>
-                                )}
-                              </div>
+                      {/* Upload Contrat — même pattern que le devis */}
+                      {!signatureContratValidee && (
+                        <div className="space-y-3">
+                          <label className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.15em] flex items-center justify-center gap-3 transition-all border-2 cursor-pointer
+                            ${contratUploaded || prospect.contrat_definitif_envoye ? 'border-green-200 bg-green-50 text-green-600' : isUploadingContrat ? 'border-orange-200 bg-orange-50 text-orange-600' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>
+                            {isUploadingContrat ? (
+                              <><Loader2 size={18} className="animate-spin" /> Upload en cours…</>
+                            ) : contratUploaded || prospect.contrat_definitif_envoye ? (
+                              <><Check size={18} /> Contrat chargé</>
+                            ) : (
+                              <><Upload size={18} /> Charger Contrat Final (PDF)</>
                             )}
+                            <input
+                              type="file"
+                              accept=".pdf"
+                              className="hidden"
+                              disabled={isUploadingContrat || signatureContratValidee}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleContratUpload(file);
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                          {contratUploadError && (
+                            <p className="text-xs text-red-500 font-medium px-2">{contratUploadError}</p>
+                          )}
+
+                          {/* Options de signature après upload */}
+                          {(contratUploaded || prospect.contrat_definitif_envoye) && (
+                            <div className="flex flex-wrap items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Signature contrat :</span>
+                              <button
+                                onClick={handleContratSignatureElectronique}
+                                disabled={isSendingContratSignature || isValidatingFinalSignature}
+                                className="px-5 py-3 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50"
+                              >
+                                {isSendingContratSignature ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                                Signature électronique
+                              </button>
+                              <button
+                                onClick={handleContratSignatureManuelle}
+                                disabled={isSendingContratSignature || isValidatingFinalSignature}
+                                className="px-5 py-3 rounded-xl bg-amber-600 text-white hover:bg-amber-700 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50"
+                              >
+                                {isValidatingFinalSignature ? <Loader2 size={14} className="animate-spin" /> : <Handshake size={14} />}
+                                Signature manuscrite
+                              </button>
+                              {contratSignatureError && (
+                                <p className="text-xs text-red-500 font-medium w-full">{contratSignatureError}</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Statut contrat signé */}
+                      {signatureContratValidee && (
+                        <div className="flex items-center gap-5 p-5 rounded-3xl border border-green-200 bg-green-50">
+                          <div className="w-12 h-12 rounded-2xl flex items-center justify-center border-2 bg-white border-green-200 text-[#10B981] shrink-0">
+                            <ShieldCheck size={24} />
                           </div>
-                        );
-                      })}
+                          <div>
+                            <p className="text-base font-bold text-slate-900">Contrat Final</p>
+                            <p className="text-[11px] text-green-600 font-black uppercase">Police active</p>
+                          </div>
+                          <span className="ml-auto text-green-600 font-black text-[10px] uppercase flex items-center gap-2"><CheckCircle size={16}/> Signé</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1694,8 +1752,8 @@ const ProspectDetail: React.FC = () => {
                   {/* Action finale si applicable */}
                   {signatureDevisValidee && !prospect.contrat_definitif_envoye && !signatureContratValidee && (
                     <div className="pt-4 mt-4 border-t border-slate-50">
-                      <button 
-                        onClick={() => setIsContractModalOpen(true)} 
+                      <button
+                        onClick={() => document.getElementById('phase-3-section')?.scrollIntoView({ behavior: 'smooth' })}
                         className="w-full py-4 rounded-xl bg-gradient-primary text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] transition-all"
                       >
                         <ShieldCheck size={16} /> Charger Contrat
@@ -1735,30 +1793,57 @@ const ProspectDetail: React.FC = () => {
                   <button onClick={() => setPreviewingDoc(null)} className="p-3 text-slate-400 hover:text-slate-900 rounded-full hover:bg-slate-100 transition-all"><X size={24}/></button>
                 </div>
               </div>
-              <div className="flex-1 bg-slate-50 flex items-center justify-center p-10">
-                <div className="bg-white w-full h-full shadow-sm rounded-2xl flex flex-col items-center justify-center p-10 text-center gap-6 border border-slate-100">
-                  <div className="w-20 h-20 rounded-2xl bg-blue-50 border-2 border-blue-100 flex items-center justify-center">
-                    <FileText size={36} className="text-[#4F7CFF]" />
-                  </div>
-                  <div>
-                    <p className="text-lg font-black text-slate-900 mb-1">{previewingDoc.label}</p>
-                    {previewingDoc.url ? (
-                      <p className="text-sm text-slate-400 font-bold">Stocké dans la GED (Dropbox).<br/>Cliquez pour ouvrir et vérifier le document.</p>
-                    ) : (
-                      <p className="text-sm text-slate-400 font-bold">Document reçu — traitement GED en cours.</p>
-                    )}
-                  </div>
-                  {previewingDoc.url && (
-                    <a
-                      href={previewingDoc.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-8 py-4 rounded-2xl bg-[#4F7CFF] text-white font-black text-sm flex items-center gap-3 hover:bg-blue-600 transition-all shadow-md"
-                    >
-                      <Eye size={18} /> Ouvrir le document
-                    </a>
-                  )}
-                </div>
+              <div className="flex-1 bg-slate-50 flex items-center justify-center p-4 overflow-hidden">
+                {(() => {
+                  const fn = (previewingDoc.fileName || previewingDoc.label || '').toLowerCase();
+                  const ext = fn.split('.').pop() || '';
+                  const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+                  const isPdf = ext === 'pdf' || fn.includes('.pdf');
+                  const rawUrl = previewingDoc.url
+                    ? previewingDoc.url.replace('www.dropbox.com', 'dl.dropboxusercontent.com')
+                    : undefined;
+
+                  if (rawUrl && !previewError && isImage) {
+                    return (
+                      <img
+                        src={rawUrl}
+                        alt={previewingDoc.label}
+                        className="max-w-full max-h-full object-contain rounded-2xl shadow-sm"
+                        onError={() => setPreviewError(true)}
+                      />
+                    );
+                  }
+                  if (rawUrl && !previewError && isPdf) {
+                    return (
+                      <iframe
+                        src={rawUrl}
+                        title={previewingDoc.label}
+                        className="w-full h-full rounded-2xl border border-slate-200"
+                        onError={() => setPreviewError(true)}
+                      />
+                    );
+                  }
+                  return (
+                    <div className="bg-white w-full h-full shadow-sm rounded-2xl flex flex-col items-center justify-center p-10 text-center gap-6 border border-slate-100">
+                      <div className="w-20 h-20 rounded-2xl bg-blue-50 border-2 border-blue-100 flex items-center justify-center">
+                        <FileText size={36} className="text-[#4F7CFF]" />
+                      </div>
+                      <div>
+                        <p className="text-lg font-black text-slate-900 mb-1">{previewingDoc.label}</p>
+                        {previewingDoc.url ? (
+                          <p className="text-sm text-slate-400 font-bold">Stocké dans la GED (Dropbox).<br/>Cliquez pour ouvrir et vérifier le document.</p>
+                        ) : (
+                          <p className="text-sm text-slate-400 font-bold">Document reçu — traitement GED en cours.</p>
+                        )}
+                      </div>
+                      {previewingDoc.url && (
+                        <a href={previewingDoc.url} target="_blank" rel="noopener noreferrer" className="px-8 py-4 rounded-2xl bg-[#4F7CFF] text-white font-black text-sm flex items-center gap-3 hover:bg-blue-600 transition-all shadow-md">
+                          <Eye size={18} /> Ouvrir le document
+                        </a>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </motion.div>
           </div>
@@ -1803,30 +1888,7 @@ const ProspectDetail: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* POPUP 2 : CONTRAT DÉFINITIF */}
-      <AnimatePresence>
-        {isContractModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsContractModalOpen(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
-            <motion.div initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }} className="relative w-full max-w-2xl bg-white rounded-[2.5rem] p-6 md:p-12 shadow-2xl border border-slate-200 overflow-y-auto max-h-[90vh] no-scrollbar">
-              <button onClick={() => setIsContractModalOpen(false)} className="absolute top-6 md:top-10 right-6 md:right-10 p-3 text-slate-400 hover:text-slate-900 rounded-full hover:bg-slate-100 transition-all"><X size={24}/></button>
-              <div className="mb-10 flex items-center gap-4">
-                <div className="p-4 bg-slate-900 text-white rounded-2xl"><ShieldCheck size={32} /></div>
-                <div><h3 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Charger Contrat Final</h3><p className="text-slate-500 text-sm font-medium">Upload depuis extranet compagnie (90% GES).</p></div>
-              </div>
-              <div className="space-y-8">
-                <div className="p-8 bg-blue-50 border-2 border-dashed border-blue-200 rounded-[2rem] text-center"><div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 text-[#4F7CFF] shadow-sm"><ShieldCheck size={32} /></div><h4 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-2">Conditions Particulières & Mandat SEPA</h4><p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">Généré via Flux API Compagnie</p></div>
-                <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl">
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Récapitulatif de l'offre validée</p>
-                   <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-3"><span className="text-sm font-bold text-slate-600">Compagnie</span><span className="text-sm font-black text-slate-900">{prospect.ai_suggestion?.compagnie}</span></div>
-                   <div className="flex justify-between items-center"><span className="text-sm font-bold text-slate-600">Tarif Définitif</span><span className="text-sm font-black text-[#10B981]">{prospect.ai_suggestion?.tarif_estime}€ TTC</span></div>
-                </div>
-                <button onClick={handleSendFinalContract} className="w-full py-5 bg-slate-900 text-white font-black uppercase tracking-[0.2em] text-[11px] rounded-2xl shadow-2xl hover:scale-[1.01] transition-all flex items-center justify-center gap-4"><PenTool size={20}/> Lancer Signature Finale</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* POPUP 2 : CONTRAT DÉFINITIF — supprimée, upload inline en Phase 3 */}
 
       {/* FICHE TARIFICATION EXTRANET */}
       <AnimatePresence>
@@ -1846,6 +1908,7 @@ const ProspectDetail: React.FC = () => {
             prospect={prospect}
             suggestion={prospect.ai_suggestion}
             devisExtrait={devisExtrait}
+            ficBrouillon={ficBrouillon}
             onClose={() => setShowFicModal(false)}
             onGenerated={async (blob) => {
               try {
@@ -1859,6 +1922,32 @@ const ProspectDetail: React.FC = () => {
               } catch (err) {
                 console.error('Erreur archivage FIC:', err);
               }
+            }}
+            onValidateAndSign={async (pdfBase64, fraisDossier, recommandation) => {
+              const contactIdForFic = (prospect.airtable_dossier_fields?.Contact as string[] | undefined)?.[0];
+              const idDossierForFic = prospect.airtable_dossier_fields?.ID_Dossier as string | undefined;
+              await validerFic({
+                dossierId: prospect.id,
+                contactId: contactIdForFic || '',
+                idDossier: idDossierForFic || '',
+                fraisDossierTtc: fraisDossier,
+                ficDataOverride: { recommandation_courtier: recommandation, frais_dossier_ttc: fraisDossier } as Partial<FicBrouillon>,
+                ficPdfBase64: pdfBase64,
+              });
+              setFicGenerated(true);
+              setFicValidated(true);
+              updateProspect(prospect.id, {
+                fiche_conseil_generee: true,
+                airtable_dossier_fields: {
+                  ...prospect.airtable_dossier_fields,
+                  Statut_Signature: 'En attente signature devis',
+                },
+              });
+            }}
+            onManualSign={async (_fraisDossier, _recommandation) => {
+              setFicGenerated(true);
+              validateManualSignature(prospect.id);
+              updateProspect(prospect.id, { fiche_conseil_generee: true });
             }}
           />
         )}
